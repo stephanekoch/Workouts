@@ -404,22 +404,37 @@ let currentTab = 'dashboard';
 
 // ── Date helpers ──────────────────────────────────────────
 function todayStr() { return new Date().toISOString().split('T')[0]; }
+function parseDate(s) {
+  if (!s) return null;
+  // Already a YYYY-MM-DD string
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(s))) {
+    const [y,m,d] = String(s).split('-').map(Number);
+    return new Date(y, m-1, d);
+  }
+  // Try direct parse
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
 function fmtDate(s) {
-  const d = new Date(s + 'T00:00:00');
+  const d = parseDate(s);
+  if (!d) return String(s);
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 function fmtDateFull(s) {
-  const d = new Date(s + 'T00:00:00');
+  const d = parseDate(s);
+  if (!d) return String(s);
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 function getMonday(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
+  const d = parseDate(dateStr);
+  if (!d) return dateStr;
   const day = d.getDay() || 7;
   d.setDate(d.getDate() - (day - 1));
   return d.toISOString().split('T')[0];
 }
 function getWeekKey(dateStr) {
-  return getMonday(dateStr);
+  if (!dateStr) return '';
+  return getMonday(String(dateStr).slice(0,10));
 }
 
 // ── Header date ───────────────────────────────────────────
@@ -461,6 +476,11 @@ async function loadData() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+    // Validate date format on first log row to catch parsing issues early
+    if (data.log && data.log.length > 0) {
+      const firstDate = data.log[0].date;
+      console.log('First log date:', firstDate, typeof firstDate);
+    }
     logRows = data.log || [];
     templates = data.templates || [];
     document.getElementById('loading-screen').classList.add('hidden');
@@ -807,13 +827,14 @@ function getUniqueSessions() {
   // Sort logRows descending
   const sorted = [...logRows].sort((a,b) => b.date.localeCompare(a.date));
   sorted.forEach(row => {
-    const key = row.date + '|' + row.session;
+    if (!row.date || !row.session) return;
+    const dateStr = String(row.date).slice(0,10);
+    const key = dateStr + '|' + row.session;
     if (seen.has(key)) return;
     seen.add(key);
-    // Look up type from templates
     const tmpl = templates.find(t => t.session === row.session);
     const type = tmpl ? tmpl.type : 'weight';
-    result.push({ date: row.date, session: row.session, type, duration: row.duration || '' });
+    result.push({ date: dateStr, session: row.session, type, duration: row.duration || '' });
   });
   return result;
 }
