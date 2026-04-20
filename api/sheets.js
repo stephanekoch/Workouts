@@ -1,5 +1,4 @@
-// Replace APPS_SCRIPT_URL with your deployed Google Apps Script URL
-const APPS_SCRIPT_URL = "YOUR_APPS_SCRIPT_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2qWuTC_4pzM8YPeYSaBRGZ6K3unIDslv4MILJp8CqPJuAcVgnKpT3ab6tMr0tbGFf/exec";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
