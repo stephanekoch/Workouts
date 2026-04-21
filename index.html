@@ -231,7 +231,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
         </div>
         <div class="split-card">
           <button class="split-q" onclick="document.getElementById('split-modal').classList.remove('hidden')">?</button>
-          <div class="split-lbl" id="split-tile-lbl">L30D Split</div>
+          <div class="split-lbl" id="split-tile-lbl">L1M Split</div>
           <div class="split-bar-row" id="split-bar">
             <div class="split-bar-w" id="split-bar-w" style="width:50%"></div>
             <div class="split-bar-c"></div>
@@ -308,9 +308,9 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
           </div>
           <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
           <div id="exercise-tiles"></div>
+          <!-- Add exercise on the fly (custom sessions only) — inside card so always visible -->
+          <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="document.getElementById('add-ex-modal').classList.remove('hidden')" style="margin-top:10px;">+ Add exercise</button>
         </div>
-        <!-- Add exercise on the fly (custom sessions only) -->
-        <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
         <button class="complete-btn" id="complete-btn" onclick="completeWorkout()">Complete workout</button>
       </div>
     </div>
@@ -347,8 +347,8 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
   <!-- Modals -->
   <div class="overlay hidden" id="split-modal">
     <div class="modal">
-      <h3>L30D Split</h3>
-      <p>Calculated over the rolling past 30 days. Each workout is classified as <strong style="color:var(--accent)">weight</strong> or <strong style="color:#15803d">cardio</strong> based on the Type column in your Templates sheet.</p>
+      <h3 id="split-modal-title">L1M Split</h3>
+      <p id="split-modal-body">Calculated as the average across the past month. Each workout is classified as <strong style="color:var(--accent)">weight</strong> or <strong style="color:#15803d">cardio</strong> based on the Type column in your Templates sheet.</p>
       <div class="modal-btns"><button class="btn-pri" onclick="document.getElementById('split-modal').classList.add('hidden')">Got it</button></div>
     </div>
   </div>
@@ -934,9 +934,15 @@ function renderDashboard() {
   const l30Str = splitCutoff.toISOString().split('T')[0];
   const l30Sessions = workoutDates.filter(w => w.date >= l30Str);
   // Update tile label
-  const splitLblMap = {30:'L30D',91:'L3M',182:'L6M',365:'L12M'};
+  const splitLblMap = {30:'L1M',91:'L3M',182:'L6M',365:'L12M'};
   const splitLblEl = document.getElementById('split-tile-lbl');
-  if(splitLblEl) splitLblEl.textContent = (splitLblMap[rangeDays]||'L'+rangeDays+'D') + ' Split';
+  const splitLbl = (splitLblMap[rangeDays]||'L'+rangeDays+'D');
+  if(splitLblEl) splitLblEl.textContent = splitLbl + ' Split';
+  const rangeWords = {30:'past month',91:'past 3 months',182:'past 6 months',365:'past 12 months'};
+  const modalTitle = document.getElementById('split-modal-title');
+  const modalBody  = document.getElementById('split-modal-body');
+  if(modalTitle) modalTitle.textContent = splitLbl + ' Split';
+  if(modalBody)  modalBody.innerHTML = 'Calculated as the average across the <strong>' + (rangeWords[rangeDays]||rangeDays+' days') + '</strong>. Each workout is classified as <strong style="color:var(--accent)">weight</strong> or <strong style="color:#15803d">cardio</strong> based on the Type column in your Templates sheet.';
   const wCount = l30Sessions.filter(w => w.type === 'weight').length;
   const cCount = l30Sessions.filter(w => w.type === 'cardio').length;
   const total = wCount + cCount;
