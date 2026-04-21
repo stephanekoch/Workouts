@@ -1499,25 +1499,19 @@ function getExerciseKnowledge() {
       };
     });
   });
-  // From log history (fill in any gaps)
-  logRows.forEach(row => {
-    if (!row.exercise) return;
-    const key = row.exercise.toLowerCase();
-    if (!map[key]) map[key] = {
-      name: row.exercise,
-      unit: 'kg',
-      sets: parseInt(row.sets) || 3,
-      repMin: row.repMin || '',
-      repMax: row.repMax || '',
-      rest: row.rest || '',
-    };
-  });
+  // Templates are the only source — log history excluded to avoid stale/mistyped names
   return Object.values(map).sort((a,b) => a.name.localeCompare(b.name));
 }
 
 function populateAddExDropdown() {
   const sel = document.getElementById('addex-select');
   if (!sel) return;
+  // Always show rep row and reset unit to kg when opening fresh
+  addExUnit = 'kg'; addExSets = 3;
+  document.querySelectorAll('#add-ex-modal .unit-btn').forEach(b => b.classList.remove('unit-active'));
+  document.getElementById('addex-unit-kg').classList.add('unit-active');
+  document.getElementById('addex-rep-row').style.display = 'flex';
+  [1,2,3].forEach(i => document.getElementById('addex-sets-'+i)?.classList.toggle('sets-active', i===3));
   const exercises = getExerciseKnowledge();
   sel.innerHTML = '<option value="">+ New exercise (type below)</option>' +
     exercises.map(e => `<option value="${e.name.replace(/"/g,'&quot;')}">${e.name}</option>`).join('');
@@ -1528,10 +1522,18 @@ function onAddExSelect() {
   const name = sel.value;
   const nameInp = document.getElementById('addex-name');
   if (!name) {
-    // Cleared — reset to defaults
+    // Cleared — reset to defaults for a new exercise
     nameInp.value = '';
     nameInp.placeholder = 'Exercise name';
     nameInp.classList.remove('addex-prefilled');
+    // Reset unit to kg and show rep row
+    addExUnit = 'kg';
+    document.querySelectorAll('#add-ex-modal .unit-btn').forEach(b => b.classList.remove('unit-active'));
+    document.getElementById('addex-unit-kg').classList.add('unit-active');
+    document.getElementById('addex-rep-row').style.display = 'flex';
+    document.getElementById('addex-repmin').value = '';
+    document.getElementById('addex-repmax').value = '';
+    document.getElementById('addex-rest').value = '';
     return;
   }
   // Pre-populate from knowledge base
