@@ -115,6 +115,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
 .inp.invalid{border-color:#ef4444;background:#fef2f2;}
 .complete-btn{width:100%;padding:16px;border:none;border-radius:11px;font-family:'Inter',sans-serif;font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;background:var(--green);color:white;margin-top:4px;opacity:.45;transition:opacity .2s;}
 .complete-btn.ready{opacity:1;}
+.add-ex-fly-btn{width:100%;padding:13px;border:1.5px dashed var(--border);border-radius:11px;font-family:'Inter',sans-serif;font-size:13px;color:var(--accent);cursor:pointer;background:var(--accent-light);margin-top:4px;margin-bottom:4px;font-weight:600;}
 
 /* History */
 .hist-row{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;}
@@ -127,6 +128,13 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
 .badge-c{background:#f0fdf4;color:#15803d;}
 .badge-dur{background:#f5f5f5;color:var(--text2);font-size:9px;font-weight:600;}
 .badge-pb{background:#fef3c7;color:#92400e;font-size:13px;}
+.detail-ex-row{padding:10px 0;border-bottom:1px solid var(--border);}
+.detail-ex-row:last-child{border-bottom:none;padding-bottom:0;}
+.detail-ex-name{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;}
+.detail-ex-sets{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+.detail-set-pill{font-size:11px;font-family:'Inter',monospace;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--text2);}
+.detail-set-pill.hit{background:var(--green-light);border-color:var(--green);color:var(--green);}
+.detail-weight{font-size:11px;color:var(--muted);margin-top:2px;}
 
 /* Modals */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;}
@@ -301,6 +309,8 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
           <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
           <div id="exercise-tiles"></div>
         </div>
+        <!-- Add exercise on the fly (custom sessions only) -->
+        <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
         <button class="complete-btn" id="complete-btn" onclick="completeWorkout()">Complete workout</button>
       </div>
     </div>
@@ -356,35 +366,105 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
       <div class="modal-btns" style="margin-top:16px;"><button class="btn-pri" onclick="document.getElementById('preview-modal').classList.remove('hidden'),document.getElementById('preview-modal').classList.add('hidden')">Close</button></div>
     </div>
   </div>
+  <!-- Custom session: just name + type, then go straight in -->
   <div class="overlay hidden" id="custom-modal">
-    <div class="custom-modal">
+    <div class="modal">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <h3>Custom session</h3>
+        <h3 style="margin:0;">Custom session</h3>
         <button onclick="document.getElementById('custom-modal').classList.add('hidden')" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0;">×</button>
       </div>
-      <div class="field-group">
+      <div class="field-group" style="margin-bottom:14px;">
         <div class="field-lbl">Session name *</div>
-        <input class="field-inp" id="custom-name" placeholder="e.g. Upper body travel" type="text"/>
+        <input class="field-inp" id="custom-name" placeholder="e.g. Upper body travel" type="text"
+          onkeydown="if(event.key==='Enter') startCustomWorkout()"/>
       </div>
-      <div class="field-group">
-        <div class="field-lbl">Type *</div>
+      <div class="field-group" style="margin-bottom:0;">
+        <div class="field-lbl">Type</div>
         <div style="display:flex;gap:8px;">
           <button class="type-pill-btn active" id="type-weight" onclick="setCustomType('weight')">💪 Weight</button>
           <button class="type-pill-btn" id="type-cardio" onclick="setCustomType('cardio')">🏃 Cardio</button>
         </div>
       </div>
-      <div class="field-lbl" style="margin-bottom:8px;">Exercises *</div>
-      <div id="custom-ex-list"></div>
-      <button class="add-ex-btn" onclick="addCustomEx()">+ Add exercise</button>
-      <div class="save-toggle" onclick="toggleSave()">
-        <span class="save-toggle-lbl">Save as template for future use</span>
-        <div class="toggle-track" id="save-toggle-track"><div class="toggle-thumb"></div></div>
-      </div>
-      <div class="modal-btns" style="margin-top:14px;">
-        <button class="btn-pri" onclick="startCustomWorkout()">Start workout</button>
+      <div class="modal-btns" style="margin-top:20px;">
+        <button class="btn-pri" onclick="startCustomWorkout()">Start workout →</button>
       </div>
     </div>
   </div>
+
+  <!-- Save as template modal — shown after completing a custom workout -->
+  <div class="overlay hidden" id="save-template-modal">
+    <div class="modal">
+      <h3>Save as template?</h3>
+      <p style="margin-bottom:0;">Save <strong id="save-tmpl-name"></strong> so you can reuse it in future workouts?</p>
+      <div class="modal-btns" style="margin-top:20px;">
+        <button class="btn-sec" onclick="finishCustomWorkout(false)">Just save workout</button>
+        <button class="btn-pri" onclick="finishCustomWorkout(true)">Save as template</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add exercise on-the-fly panel (shown inside active workout) -->
+  <div class="overlay hidden" id="add-ex-modal">
+    <div class="modal">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <h3 style="margin:0;">Add exercise</h3>
+        <button onclick="document.getElementById('add-ex-modal').classList.add('hidden')" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0;">×</button>
+      </div>
+      <div class="field-group" style="margin-bottom:12px;">
+        <div class="field-lbl">Exercise name *</div>
+        <input class="field-inp" id="addex-name" placeholder="e.g. Bench press" type="text"/>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-start;">
+        <div style="flex:1;">
+          <div class="field-lbl" style="margin-bottom:6px;">Unit</div>
+          <div style="display:flex;gap:5px;">
+            <button class="unit-btn unit-active" id="addex-unit-kg" onclick="setAddExUnit('kg',this)">kg</button>
+            <button class="unit-btn" id="addex-unit-km" onclick="setAddExUnit('km',this)">km</button>
+            <button class="unit-btn" id="addex-unit-time" onclick="setAddExUnit('time',this)">time</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-lbl" style="margin-bottom:6px;">Sets</div>
+          <div style="display:flex;gap:5px;">
+            <button class="sets-btn" id="addex-sets-1" onclick="setAddExSets(1,this)">1</button>
+            <button class="sets-btn" id="addex-sets-2" onclick="setAddExSets(2,this)">2</button>
+            <button class="sets-btn sets-active" id="addex-sets-3" onclick="setAddExSets(3,this)">3</button>
+          </div>
+        </div>
+      </div>
+      <div id="addex-rep-row" style="display:flex;gap:8px;margin-bottom:12px;">
+        <div style="flex:1;">
+          <div class="field-lbl" style="margin-bottom:5px;">Rep min</div>
+          <input class="field-inp" id="addex-repmin" placeholder="4" type="text" inputmode="numeric" style="padding:8px 10px;font-size:13px;"/>
+        </div>
+        <div style="flex:1;">
+          <div class="field-lbl" style="margin-bottom:5px;">Rep max</div>
+          <input class="field-inp" id="addex-repmax" placeholder="6" type="text" inputmode="numeric" style="padding:8px 10px;font-size:13px;"/>
+        </div>
+        <div style="flex:1;">
+          <div class="field-lbl" style="margin-bottom:5px;">Rest</div>
+          <input class="field-inp" id="addex-rest" placeholder="3:00" type="text" style="padding:8px 10px;font-size:13px;"/>
+        </div>
+      </div>
+      <div class="modal-btns">
+        <button class="btn-pri" onclick="confirmAddEx()">Add exercise</button>
+      </div>
+    </div>
+  </div>
+  <!-- Workout detail modal -->
+  <div class="overlay hidden" id="workout-detail-modal">
+    <div class="modal" style="max-width:340px;max-height:80vh;overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <h3 id="detail-title" style="margin:0;"></h3>
+          <div id="detail-date" style="font-size:11px;color:var(--muted);margin-top:3px;"></div>
+        </div>
+        <button onclick="document.getElementById('workout-detail-modal').classList.add('hidden')" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0;">×</button>
+      </div>
+      <div id="detail-exercises"></div>
+    </div>
+  </div>
+
   <div class="toast hidden" id="toast">
     <div class="toast-inner">💪 Workout complete!</div>
   </div>
@@ -564,6 +644,8 @@ function startWorkout() {
   document.getElementById('prog-session-name').textContent = selectedTemplate.session;
   doneCount = 0;
   updateProgress();
+  isCustomSession = false;
+  document.getElementById('add-ex-fly-btn').classList.add('hidden');
   document.getElementById('log-state-select').style.display = 'none';
   document.getElementById('log-state-workout').style.display = 'block';
   // Timer
@@ -581,8 +663,10 @@ function startWorkout() {
 
 function backToSelection() {
   clearInterval(timerInterval);
+  isCustomSession = false;
   document.getElementById('timer-badge').style.display = 'none';
   document.getElementById('header-right').style.display = 'block';
+  document.getElementById('add-ex-fly-btn').classList.add('hidden');
   document.getElementById('log-state-select').style.display = 'block';
   document.getElementById('log-state-workout').style.display = 'none';
 }
@@ -596,7 +680,24 @@ function buildExerciseTiles() {
 function buildTile(ex, i) {
   const unit = (ex.unit || 'kg').toLowerCase();
   const lastBest = getPersonalBest(ex.exercise, 28);
-  const repRange = (ex.repMin && ex.repMax) ? ex.repMin + '–' + ex.repMax : '';
+  // Clean rest: strip full date strings like "Sat Dec 30 1899 02:00:00..."
+  // Google Sheets time values come through as date strings — extract HH:MM
+  function cleanRest(r) {
+    if (!r) return '';
+    const s = String(r);
+    // Full date string — extract time portion
+    const timeMatch = s.match(/(\d{1,2}:\d{2}):\d{2}/);
+    if (timeMatch) return timeMatch[1];
+    // Already clean mm:ss or hh:mm
+    if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+    return s;
+  }
+  const restDisplay = cleanRest(ex.rest);
+
+  // Fix rep range — default to 1 if missing/invalid
+  const rMin = parseInt(ex.repMin) > 0 ? parseInt(ex.repMin) : (ex.repMin === '-' || !ex.repMin ? null : 1);
+  const rMax = parseInt(ex.repMax) > 0 ? parseInt(ex.repMax) : (ex.repMax === '-' || !ex.repMax ? null : 1);
+  const repRange = (rMin && rMax) ? rMin + '–' + rMax : '';
   const targetStr = repRange
     ? `Target: ${repRange} reps${lastBest ? ' · last: ' + lastBest + ' kg' : ''}`
     : (lastBest ? 'Last: ' + lastBest + ' kg' : '');
@@ -641,8 +742,12 @@ function buildTile(ex, i) {
       </div>`;
   }
 
+  // Store instructions in global map to avoid quote escaping issues in onclick
+  window._instrMap = window._instrMap || {};
+  const instrKey = 'ex_' + i;
+  if (ex.instructions) window._instrMap[instrKey] = { title: ex.exercise, body: ex.instructions };
   const qBtn = ex.instructions
-    ? `<button class="q-btn" onclick="showInstr('${esc(ex.exercise)}','${esc(ex.instructions)}')">?</button>` : '';
+    ? `<button class="q-btn" onclick="showInstrKey('${instrKey}')">?</button>` : '';
 
   return `<div class="ex-tile" id="ex-tile-${i}">
     <div class="ex-head">
@@ -650,7 +755,7 @@ function buildTile(ex, i) {
         <div class="ex-name-row">
           <span class="ex-name">${ex.exercise}</span>${qBtn}
         </div>
-        <div class="ex-meta">${ex.rest ? ex.rest + ' rest' : ''}</div>
+        <div class="ex-meta">${restDisplay ? restDisplay + ' rest' : ''}</div>
         ${targetStr ? `<div class="ex-target">${targetStr}</div>` : ''}
       </div>
       <div class="ex-check" id="ex-check-${i}" onclick="toggleDone(${i})"></div>
@@ -723,7 +828,7 @@ function getPersonalBest(exerciseName, days) {
 
 // ── COMPLETE WORKOUT ──────────────────────────────────────
 async function completeWorkout() {
-  if (doneCount < activeExercises.length) return;
+  if (doneCount < activeExercises.length && activeExercises.length > 0) return;
   clearInterval(timerInterval);
   const duration = Math.round(timerSeconds / 60);
   document.getElementById('timer-badge').style.display = 'none';
@@ -755,6 +860,26 @@ async function completeWorkout() {
     duration,
     exercises,
   };
+
+  // For custom sessions: ask about template first, then celebrate via finishCustomWorkout
+  if (isCustomSession) {
+    document.getElementById('save-tmpl-name').textContent = selectedTemplate?.session || 'this session';
+    // Save the workout data first (silently)
+    try {
+      await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      exercises.forEach((ex, i) => {
+        logRows.push({ ...ex, date: payload.date, session: payload.session, duration: i===0 ? duration : '' });
+      });
+      renderDashboard();
+      renderHistory();
+    } catch(err) { console.error('Save failed:', err); }
+    document.getElementById('save-template-modal').classList.remove('hidden');
+    return;
+  }
 
   // Optimistic: celebrate immediately, save in background
   launchConfetti();
@@ -825,7 +950,7 @@ function renderDashboard() {
 function getUniqueSessions() {
   const seen = new Set(), result = [];
   // Sort logRows descending
-  const sorted = [...logRows].sort((a,b) => b.date.localeCompare(a.date));
+  const sorted = [...logRows].sort((a,b) => String(b.date).localeCompare(String(a.date)));
   sorted.forEach(row => {
     if (!row.date || !row.session) return;
     const dateStr = String(row.date).slice(0,10);
@@ -1059,6 +1184,65 @@ function renderLineChart(container, data, valFn, labelFn, color, unit) {
 }
 
 // ── HISTORY ───────────────────────────────────────────────
+function showWorkoutDetail(date, session) {
+  const rows = logRows.filter(r => r.date === date && r.session === session);
+  const dur = rows.find(r => r.duration)?.duration;
+
+  document.getElementById('detail-title').textContent = session;
+  document.getElementById('detail-date').textContent = fmtDateFull(date) + (dur ? ' · ' + Math.round(Number(dur)) + ' min' : '');
+
+  if (!rows.length) {
+    document.getElementById('detail-exercises').innerHTML = '<p style="font-size:13px;color:var(--muted);">No exercise data found.</p>';
+    document.getElementById('workout-detail-modal').classList.remove('hidden');
+    return;
+  }
+
+  // Group by exercise name preserving order
+  const exMap = {};
+  const exOrder = [];
+  rows.forEach(r => {
+    if (!exMap[r.exercise]) { exMap[r.exercise] = r; exOrder.push(r.exercise); }
+  });
+
+  document.getElementById('detail-exercises').innerHTML = exOrder.map(exName => {
+    const r = exMap[exName];
+    const unit = (r.unit || 'kg').toLowerCase();
+    const repMin = parseInt(r.repMin) || 0;
+    const repMax = parseInt(r.repMax) || 99;
+
+    // Weight line
+    const wtStr = r.weight ? `<div class="detail-weight">${r.weight} kg</div>` : '';
+
+    // Set pills
+    let setPills = '';
+    if (unit === 'time') {
+      setPills = r.set1 ? `<div class="detail-set-pill">${r.set1}</div>` : '';
+    } else if (unit === 'km') {
+      setPills = r.set1 ? `<div class="detail-set-pill">${r.set1} km</div>` : '';
+    } else {
+      [r.set1, r.set2, r.set3].filter((v,i) => i < (parseInt(r.sets)||3)).forEach((v, i) => {
+        if (!v && v !== 0) return;
+        const n = parseInt(v);
+        const hit = !isNaN(n) && n >= repMin && n <= repMax;
+        const label = repMin ? `${v}/${repMax}` : String(v);
+        setPills += `<div class="detail-set-pill ${hit?'hit':''}">${label}</div>`;
+      });
+    }
+
+    // Target line
+    const targetStr = (repMin && repMax && repMax < 99) ? `${repMin}–${repMax} reps` : '';
+
+    return `<div class="detail-ex-row">
+      <div class="detail-ex-name">${exName}</div>
+      ${targetStr ? `<div style="font-size:11px;color:var(--muted);">${targetStr}</div>` : ''}
+      ${wtStr}
+      ${setPills ? `<div class="detail-ex-sets">${setPills}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('workout-detail-modal').classList.remove('hidden');
+}
+
 function renderHistory() {
   const list = document.getElementById('history-list');
   const sessions = getUniqueSessions().slice(0, 15);
@@ -1068,8 +1252,9 @@ function renderHistory() {
   }
 
   list.innerHTML = sessions.map(s => {
-    // Count exercises for this session+date
-    const exCount = new Set(logRows.filter(r => r.date===s.date && r.session===s.session).map(r=>r.exercise)).size;
+    // Count exercises for this session+date — min 1 (cardio sessions may have 1 nameless row)
+    const sessionLogRows = logRows.filter(r => r.date===s.date && r.session===s.session);
+    const exCount = Math.max(1, new Set(sessionLogRows.map(r=>r.exercise).filter(Boolean)).size);
     const dur = s.duration ? Math.round(Number(s.duration)) : null;
     const tmpl = templates.find(t => t.session === s.session);
     const type = tmpl ? tmpl.type : s.type;
@@ -1083,7 +1268,7 @@ function renderHistory() {
       ? `<div class="badge badge-c">C</div>`
       : `<div class="badge badge-w">W</div>`;
 
-    return `<div class="hist-row">
+    return `<div class="hist-row" onclick="showWorkoutDetail('${s.date}','${esc(s.session)}')">
       <div class="hist-main">
         <div class="hist-name">${s.session}</div>
         <div class="hist-date">${fmtDateFull(s.date)} · ${exCount} exercise${exCount!==1?'s':''}</div>
@@ -1108,6 +1293,9 @@ function checkPB(date, session) {
 }
 
 // ── CUSTOM SESSION ────────────────────────────────────────
+let isCustomSession = false;
+let addExUnit = 'kg', addExSets = 3;
+
 function setCustomType(type) {
   customType = type;
   document.getElementById('type-weight').classList.toggle('active', type==='weight');
@@ -1115,135 +1303,138 @@ function setCustomType(type) {
 }
 
 function openCustomModal() {
-  customExCount = 0;
   customType = 'weight';
-  document.getElementById('custom-ex-list').innerHTML = '';
   document.getElementById('custom-name').value = '';
   document.getElementById('type-weight').classList.add('active');
   document.getElementById('type-cardio').classList.remove('active');
-  saveAsTemplate = false;
-  document.getElementById('save-toggle-track').classList.remove('on');
-  addCustomEx(); addCustomEx();
   document.getElementById('custom-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('custom-name').focus(), 100);
 }
 
-function addCustomEx() {
-  const idx = customExCount++;
-  const div = document.createElement('div');
-  div.className = 'ex-builder-row cex-row';
-  div.id = 'cex-'+idx;
-  div.dataset.unit = 'kg';
-  div.dataset.sets = '3';
-  div.innerHTML = buildExRow(idx, 'kg', 3);
-  document.getElementById('custom-ex-list').appendChild(div);
-}
-
-function buildExRow(idx, unit, sets) {
-  sets = sets || 3;
-  const isKg = unit === 'kg';
-  const repFields = isKg ? `
-    <div><div class="ex-mini-lbl">Rep min</div><input class="field-inp small" placeholder="4" type="text" inputmode="numeric"/></div>
-    <div><div class="ex-mini-lbl">Rep max</div><input class="field-inp small" placeholder="6" type="text" inputmode="numeric"/></div>` : `<div></div><div></div>`;
-  const setsBtns = [1,2,3].map(n => `<button class="sets-btn${sets===n?' sets-active':''}" onclick="setSets(${idx},${n},this)">${n}</button>`).join('');
-  const setInputs = Array.from({length:sets},(_,i)=>`<div class="set-preview">S${i+1}</div>`).join('');
-  return `
-    <button class="remove-ex-btn" onclick="removeCustomEx(${idx})">×</button>
-    <div class="ex-row-name">Exercise ${idx+1}</div>
-    <div class="field-group" style="margin-bottom:8px;">
-      <input class="field-inp" placeholder="Exercise name *" type="text"/>
-    </div>
-    <div style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-start;">
-      <div style="flex:1;">
-        <div class="field-lbl" style="margin-bottom:6px;">Unit</div>
-        <div style="display:flex;gap:5px;">
-          <button class="unit-btn${unit==='kg'?' unit-active':''}" onclick="setUnit(${idx},'kg',this)">kg</button>
-          <button class="unit-btn${unit==='km'?' unit-active':''}" onclick="setUnit(${idx},'km',this)">km</button>
-          <button class="unit-btn${unit==='time'?' unit-active':''}" onclick="setUnit(${idx},'time',this)">time</button>
-        </div>
-      </div>
-      <div>
-        <div class="field-lbl" style="margin-bottom:6px;">Sets</div>
-        <div style="display:flex;gap:5px;">${setsBtns}</div>
-      </div>
-    </div>
-    <div class="ex-mini-grid" style="grid-template-columns:${isKg?'1fr 1fr 1fr 1fr':'1fr 1fr'};margin-bottom:8px;">
-      ${repFields}
-      <div><div class="ex-mini-lbl">Rest</div><input class="field-inp small" placeholder="3:00" type="text"/></div>
-      <div style="display:flex;gap:4px;align-items:flex-end;">${setInputs}</div>
-    </div>`;
-}
-
-function setUnit(idx, unit, btn) {
-  const row = document.getElementById('cex-'+idx);
-  const sets = parseInt(row.dataset.sets)||3;
-  row.dataset.unit = unit;
-  const nameVal = row.querySelector('.field-inp')?.value || '';
-  row.innerHTML = buildExRow(idx, unit, sets);
-  if(row.querySelector('.field-inp')) row.querySelector('.field-inp').value = nameVal;
-}
-
-function setSets(idx, n, btn) {
-  const row = document.getElementById('cex-'+idx);
-  const unit = row.dataset.unit || 'kg';
-  row.dataset.sets = n;
-  const nameVal = row.querySelector('.field-inp')?.value || '';
-  row.innerHTML = buildExRow(idx, unit, n);
-  if(row.querySelector('.field-inp')) row.querySelector('.field-inp').value = nameVal;
-}
-
-function removeCustomEx(idx) {
-  const el = document.getElementById('cex-'+idx);
-  if(el) el.remove();
-}
-
-function toggleSave() {
-  saveAsTemplate = !saveAsTemplate;
-  document.getElementById('save-toggle-track').classList.toggle('on', saveAsTemplate);
-}
-
-async function startCustomWorkout() {
+function startCustomWorkout() {
   const name = document.getElementById('custom-name').value.trim();
   if (!name) { document.getElementById('custom-name').focus(); return; }
-
-  // Collect exercises from form
-  const rows = document.querySelectorAll('.cex-row');
-  const exercises = [];
-  rows.forEach((row, i) => {
-    const nameInput = row.querySelector('.field-inp');
-    const exName = nameInput?.value.trim();
-    if (!exName) return;
-    const unit = row.dataset.unit || 'kg';
-    const sets = parseInt(row.dataset.sets) || 3;
-    const inputs = row.querySelectorAll('.field-inp.small');
-    const repMin = unit==='kg' && inputs[0] ? inputs[0].value : '';
-    const repMax = unit==='kg' && inputs[1] ? inputs[1].value : '';
-    const restIdx = unit==='kg' ? 2 : 0;
-    const rest = inputs[restIdx] ? inputs[restIdx].value : '';
-    exercises.push({ order: i+1, exercise: exName, unit, sets, repMin, repMax, rest, instructions: '' });
-  });
-
-  if (!exercises.length) return;
-
   document.getElementById('custom-modal').classList.add('hidden');
 
-  // Build a temporary template object
-  const customTmpl = { session: name, type: customType, exercises };
-  selectedTemplate = customTmpl;
+  // Build an empty template — exercises will be added on the fly
+  isCustomSession = true;
+  selectedTemplate = { session: name, type: customType, exercises: [] };
+  activeExercises = [];
+  document.getElementById('exercise-tiles').innerHTML =
+    '<div id="no-ex-msg" style="text-align:center;color:var(--muted);font-size:13px;padding:20px 0;">No exercises yet.<br/>Tap below to add your first one.</div>';
+  document.getElementById('prog-session-name').textContent = name;
+  doneCount = 0;
+  updateProgress();
+  document.getElementById('add-ex-fly-btn').classList.remove('hidden');
+  isCustomSession = false;
+  document.getElementById('add-ex-fly-btn').classList.add('hidden');
+  document.getElementById('log-state-select').style.display = 'none';
+  document.getElementById('log-state-workout').style.display = 'block';
+  // Timer
+  timerSeconds = 0;
+  document.getElementById('header-right').style.display = 'none';
+  document.getElementById('timer-badge').style.display = 'block';
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timerSeconds++;
+    const m = Math.floor(timerSeconds/60), s = timerSeconds % 60;
+    document.getElementById('timer-badge').textContent = (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+  }, 1000);
+  document.getElementById('content').scrollTop = 0;
+}
 
-  // Optionally save to sheet
-  if (saveAsTemplate) {
+// Add exercise on the fly
+function setAddExUnit(unit, btn) {
+  addExUnit = unit;
+  document.querySelectorAll('#add-ex-modal .unit-btn').forEach(b => b.classList.remove('unit-active'));
+  btn.classList.add('unit-active');
+  // Show/hide rep row
+  document.getElementById('addex-rep-row').style.display = unit === 'kg' ? 'flex' : 'none';
+}
+
+function setAddExSets(n, btn) {
+  addExSets = n;
+  [1,2,3].forEach(i => {
+    const b = document.getElementById('addex-sets-'+i);
+    if(b) b.classList.toggle('sets-active', i===n);
+  });
+}
+
+function confirmAddEx() {
+  const name = document.getElementById('addex-name').value.trim();
+  if (!name) { document.getElementById('addex-name').focus(); return; }
+  const repMin = document.getElementById('addex-repmin').value.trim();
+  const repMax = document.getElementById('addex-repmax').value.trim();
+  const rest = document.getElementById('addex-rest').value.trim();
+
+  const ex = {
+    order: activeExercises.length + 1,
+    exercise: name,
+    unit: addExUnit,
+    sets: addExSets,
+    repMin: repMin || '',
+    repMax: repMax || '',
+    rest: rest || '',
+    instructions: '',
+    done: false,
+  };
+  activeExercises.push(ex);
+  selectedTemplate.exercises.push(ex);
+
+  // Remove "no exercises" msg if present
+  const msg = document.getElementById('no-ex-msg');
+  if (msg) msg.remove();
+
+  // Append new tile
+  const idx = activeExercises.length - 1;
+  const div = document.createElement('div');
+  div.innerHTML = buildTile(ex, idx);
+  document.getElementById('exercise-tiles').appendChild(div.firstElementChild);
+
+  updateProgress();
+  document.getElementById('add-ex-modal').classList.add('hidden');
+  // Reset form
+  document.getElementById('addex-name').value = '';
+  document.getElementById('addex-repmin').value = '';
+  document.getElementById('addex-repmax').value = '';
+  document.getElementById('addex-rest').value = '';
+  addExUnit = 'kg'; addExSets = 3;
+  document.querySelectorAll('#add-ex-modal .unit-btn').forEach(b => b.classList.remove('unit-active'));
+  document.getElementById('addex-unit-kg').classList.add('unit-active');
+  [1,2,3].forEach(i => document.getElementById('addex-sets-'+i)?.classList.toggle('sets-active', i===3));
+  document.getElementById('addex-rep-row').style.display = 'flex';
+}
+
+// After completing a custom workout — ask about template
+async function finishCustomWorkout(saveAsTempl) {
+  document.getElementById('save-template-modal').classList.add('hidden');
+  if (saveAsTempl && selectedTemplate) {
     try {
       await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'saveTemplate', session: name, type: customType, exercises }),
+        body: JSON.stringify({
+          action: 'saveTemplate',
+          session: selectedTemplate.session,
+          type: selectedTemplate.type || customType,
+          exercises: selectedTemplate.exercises,
+        }),
       });
-      templates.push(customTmpl);
+      templates.push({ ...selectedTemplate });
       buildSessionList();
     } catch(err) { console.error('Template save failed:', err); }
   }
-
-  startWorkout();
+  // Celebrate
+  launchConfetti();
+  const toast = document.getElementById('toast');
+  toast.classList.remove('hidden');
+  setTimeout(() => toast.classList.add('hidden'), 2800);
+  setTimeout(() => {
+    isCustomSession = false;
+    document.getElementById('add-ex-fly-btn').classList.add('hidden');
+    document.getElementById('log-state-workout').style.display = 'none';
+    document.getElementById('log-state-select').style.display = 'block';
+  }, 3200);
 }
 
 // ── HELPERS ───────────────────────────────────────────────
@@ -1251,6 +1442,11 @@ function showInstr(title, body) {
   document.getElementById('instr-title').textContent = title;
   document.getElementById('instr-body').textContent = body;
   document.getElementById('instr-modal').classList.remove('hidden');
+}
+function showInstrKey(key) {
+  const entry = (window._instrMap || {})[key];
+  if (!entry) return;
+  showInstr(entry.title, entry.body);
 }
 
 function launchConfetti() {
