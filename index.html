@@ -231,7 +231,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
         </div>
         <div class="split-card">
           <button class="split-q" onclick="document.getElementById('split-modal').classList.remove('hidden')">?</button>
-          <div class="split-lbl">L30D Split</div>
+          <div class="split-lbl" id="split-tile-lbl">L30D Split</div>
           <div class="split-bar-row" id="split-bar">
             <div class="split-bar-w" id="split-bar-w" style="width:50%"></div>
             <div class="split-bar-c"></div>
@@ -929,10 +929,14 @@ function renderDashboard() {
   const monthCount = workoutDates.filter(w => w.date >= monthStart).length;
   document.getElementById('stat-month').textContent = monthCount;
 
-  // L30D split
-  const l30 = new Date(); l30.setDate(l30.getDate() - 30);
-  const l30Str = l30.toISOString().split('T')[0];
+  // Split based on current rangeDays
+  const splitCutoff = new Date(); splitCutoff.setDate(splitCutoff.getDate() - rangeDays);
+  const l30Str = splitCutoff.toISOString().split('T')[0];
   const l30Sessions = workoutDates.filter(w => w.date >= l30Str);
+  // Update tile label
+  const splitLblMap = {30:'L30D',91:'L3M',182:'L6M',365:'L12M'};
+  const splitLblEl = document.getElementById('split-tile-lbl');
+  if(splitLblEl) splitLblEl.textContent = (splitLblMap[rangeDays]||'L'+rangeDays+'D') + ' Split';
   const wCount = l30Sessions.filter(w => w.type === 'weight').length;
   const cCount = l30Sessions.filter(w => w.type === 'cardio').length;
   const total = wCount + cCount;
@@ -1037,7 +1041,31 @@ function renderBarChart(containerId, data, valueFn, yLabel, color) {
     <line x1="${PL}" y1="${PT+iH}" x2="${W-PR}" y2="${PT+iH}" stroke="#eee" stroke-width="1"/>
     <line x1="${PL}" y1="${PT+iH/2}" x2="${W-PR}" y2="${PT+iH/2}" stroke="#f0f0f0" stroke-width="1" stroke-dasharray="3,3"/>`;
 
-  container.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}">${yAxis}${bars}${xlbls}</svg>`;
+  const svgId = 'svg-' + containerId;
+  container.innerHTML = `<div style="position:relative;">
+    <svg id="${svgId}" class="chart-svg" viewBox="0 0 ${W} ${H}" style="cursor:pointer;">${yAxis}${bars}${xlbls}</svg>
+    <div id="tip-${containerId}" style="display:none;position:absolute;background:#1a1a1a;color:white;font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;pointer-events:none;white-space:nowrap;"></div>
+  </div>`;
+  // Tap/click handler
+  document.getElementById(svgId).addEventListener('click', function(e) {
+    const rect = this.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const mx = (e.clientX - rect.left) * scaleX;
+    if (mx < PL) return;
+    const idx = Math.round((mx - PL - gap/2) / gap);
+    const i = Math.max(0, Math.min(n-1, idx));
+    const v = vals[i];
+    const label = data[i].label;
+    const tip = document.getElementById('tip-' + containerId);
+    const bx = PL + i*gap + gap/2;
+    const tipX = Math.min(bx / W * rect.width + rect.left - container.getBoundingClientRect().left, container.offsetWidth - 80);
+    tip.style.left = Math.max(0,tipX) + 'px';
+    tip.style.top = '-28px';
+    tip.style.display = 'block';
+    tip.textContent = label + ': ' + v;
+    clearTimeout(tip._t);
+    tip._t = setTimeout(() => tip.style.display='none', 2000);
+  });
 }
 
 function renderSplitChart(containerId, sessions) {
@@ -1075,7 +1103,30 @@ function renderSplitChart(containerId, sessions) {
     <text x="${PL-4}" y="${PT+iH/2+3}" text-anchor="end" font-size="9" fill="#bbb">50%</text>
     <text x="${PL-4}" y="${PT+4}" text-anchor="end" font-size="9" fill="#bbb">100%</text>`;
 
-  container.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}">${axes}${bars}${xlbls}</svg>`;
+  const svgIdS = 'svg-' + containerId;
+  container.innerHTML = `<div style="position:relative;">
+    <svg id="${svgIdS}" class="chart-svg" viewBox="0 0 ${W} ${H}" style="cursor:pointer;">${axes}${bars}${xlbls}</svg>
+    <div id="tip-${containerId}" style="display:none;position:absolute;background:#1a1a1a;color:white;font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;pointer-events:none;white-space:nowrap;"></div>
+  </div>`;
+  document.getElementById(svgIdS).addEventListener('click', function(e) {
+    const rect = this.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const mx = (e.clientX - rect.left) * scaleX;
+    if (mx < PL) return;
+    const idx = Math.round((mx - PL - gap/2) / gap);
+    const i = Math.max(0, Math.min(n-1, idx));
+    const w = weeks[i];
+    const tip = document.getElementById('tip-' + containerId);
+    const bx = PL + i*gap + gap/2;
+    const tipX = Math.min(bx / W * rect.width + rect.left - container.getBoundingClientRect().left, container.offsetWidth - 100);
+    tip.style.left = Math.max(0,tipX) + 'px';
+    tip.style.top = '-28px';
+    tip.style.display = 'block';
+    const tot = w.weight + w.cardio || 1;
+    tip.textContent = w.label + ': ' + Math.round(w.weight/tot*100) + '% W / ' + Math.round(w.cardio/tot*100) + '% C';
+    clearTimeout(tip._t);
+    tip._t = setTimeout(() => tip.style.display='none', 2000);
+  });
 }
 
 function renderStrengthChart(containerId, exerciseName) {
@@ -1174,13 +1225,35 @@ function renderLineChart(container, data, valFn, labelFn, color, unit) {
   const step=Math.ceil(n/5);
   const xlbls=data.map((d,i)=>i%step===0?`<text x="${toX(i).toFixed(1)}" y="${H-2}" text-anchor="middle" font-size="9" fill="#bbb">${labelFn(d)}</text>`:'').join('');
 
-  container.innerHTML=`<svg class="chart-svg" viewBox="0 0 ${W} ${H}">
-    ${axes}
-    <path d="${fillD}" fill="${color}" opacity=".08"/>
-    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    ${latestPill}
-    ${xlbls}
-  </svg>`;
+  const svgIdL = 'lsvg-' + Math.random().toString(36).slice(2,7);
+  container.innerHTML=`<div style="position:relative;">
+    <svg id="${svgIdL}" class="chart-svg" viewBox="0 0 ${W} ${H}" style="cursor:pointer;">
+      ${axes}
+      <path d="${fillD}" fill="${color}" opacity=".08"/>
+      <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${latestPill}
+      ${xlbls}
+    </svg>
+    <div id="ltip-${svgIdL}" style="display:none;position:absolute;background:#1a1a1a;color:white;font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;pointer-events:none;white-space:nowrap;"></div>
+  </div>`;
+  document.getElementById(svgIdL).addEventListener('click', function(e) {
+    const rect = this.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const mx = (e.clientX - rect.left) * scaleX;
+    // Find nearest data point
+    let best = 0, bestDist = Infinity;
+    vals.forEach((v,i) => { const d = Math.abs(toX(i)-mx); if(d<bestDist){bestDist=d;best=i;} });
+    const v = vals[best];
+    if(v===null) return;
+    const tip = document.getElementById('ltip-' + svgIdL);
+    const px = toX(best) / W * rect.width + rect.left - container.getBoundingClientRect().left;
+    tip.style.left = Math.max(0, Math.min(px - 30, container.offsetWidth - 90)) + 'px';
+    tip.style.top = '-28px';
+    tip.style.display = 'block';
+    tip.textContent = labelFn(data[best]) + ': ' + v + (unit||'');
+    clearTimeout(tip._t);
+    tip._t = setTimeout(() => tip.style.display='none', 2000);
+  });
 }
 
 // ── HISTORY ───────────────────────────────────────────────
