@@ -116,6 +116,8 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
 .complete-btn{width:100%;padding:16px;border:none;border-radius:11px;font-family:'Inter',sans-serif;font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;background:var(--green);color:white;margin-top:4px;opacity:.45;transition:opacity .2s;}
 .complete-btn.ready{opacity:1;}
 .add-ex-fly-btn{width:100%;padding:13px;border:1.5px dashed var(--border);border-radius:11px;font-family:'Inter',sans-serif;font-size:13px;color:var(--accent);cursor:pointer;background:var(--accent-light);margin-top:4px;margin-bottom:4px;font-weight:600;}
+#custom-build-exercises .ex-tile .ex-inputs-box{pointer-events:none;opacity:0.5;}
+#custom-build-exercises .ex-check{pointer-events:none;opacity:0.4;}
 
 /* History */
 .hist-row{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;}
@@ -913,6 +915,7 @@ async function completeWorkout() {
   setTimeout(() => {
     document.getElementById('log-state-workout').style.display = 'none';
     document.getElementById('log-state-select').style.display = 'block';
+    switchTab('history');
   }, 3200);
 
   // Save to sheet
@@ -1495,7 +1498,7 @@ function getExerciseKnowledge() {
         sets: ex.sets || 3,
         repMin: ex.repMin || '',
         repMax: ex.repMax || '',
-        rest: ex.rest || '',
+        rest: cleanRest(ex.rest),
       };
     });
   });
@@ -1649,6 +1652,7 @@ async function finishCustomWorkout(saveAsTempl) {
     document.getElementById('log-state-workout').style.display = 'none';
     document.getElementById('log-state-custom').style.display = 'none';
     document.getElementById('log-state-select').style.display = 'block';
+    switchTab('history');
   }, 3200);
 }
 
