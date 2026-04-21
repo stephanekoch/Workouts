@@ -295,6 +295,22 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
         </div>
         <button class="start-btn" id="start-btn" onclick="startWorkout()">Start workout</button>
       </div>
+
+      <!-- State C: custom session builder (before timer starts) -->
+      <div id="log-state-custom" style="display:none;">
+        <button class="back-btn" onclick="backToSelection()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <div class="card">
+          <div class="sec" id="custom-build-title">Custom session</div>
+          <div id="custom-build-exercises">
+            <div id="custom-no-ex-msg" style="text-align:center;color:var(--muted);font-size:13px;padding:16px 0;">No exercises yet — add your first one below.</div>
+          </div>
+          <button class="add-ex-fly-btn" style="margin-top:8px;" onclick="document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
+        </div>
+        <button class="start-btn" id="custom-start-btn" onclick="startCustomTimer()" style="opacity:.4;" disabled>Start workout</button>
+      </div>
       <!-- State B: active workout -->
       <div id="log-state-workout" style="display:none;">
         <button class="back-btn" onclick="backToSelection()">
@@ -308,7 +324,6 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
           </div>
           <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
           <div id="exercise-tiles"></div>
-          <!-- Add exercise on the fly (custom sessions only) — inside card so always visible -->
           <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="document.getElementById('add-ex-modal').classList.remove('hidden')" style="margin-top:10px;">+ Add exercise</button>
         </div>
         <button class="complete-btn" id="complete-btn" onclick="completeWorkout()">Complete workout</button>
@@ -386,7 +401,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
         </div>
       </div>
       <div class="modal-btns" style="margin-top:20px;">
-        <button class="btn-pri" onclick="startCustomWorkout()">Start workout →</button>
+        <button class="btn-pri" onclick="startCustomWorkout()">Next → add exercises</button>
       </div>
     </div>
   </div>
@@ -664,10 +679,12 @@ function startWorkout() {
 function backToSelection() {
   clearInterval(timerInterval);
   isCustomSession = false;
+  activeExercises = [];
   document.getElementById('timer-badge').style.display = 'none';
   document.getElementById('header-right').style.display = 'block';
   document.getElementById('add-ex-fly-btn').classList.add('hidden');
   document.getElementById('log-state-select').style.display = 'block';
+  document.getElementById('log-state-custom').style.display = 'none';
   document.getElementById('log-state-workout').style.display = 'none';
 }
 
@@ -978,7 +995,7 @@ function setRange(days, el) {
   rangeDays = days;
   document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
-  renderCharts();
+  renderDashboard();  // re-renders charts AND updates split tile/modal
 }
 
 function getFilteredSessions() {
@@ -1395,21 +1412,39 @@ function startCustomWorkout() {
   if (!name) { document.getElementById('custom-name').focus(); return; }
   document.getElementById('custom-modal').classList.add('hidden');
 
-  // Build an empty template — exercises will be added on the fly
+  // Set up template shell — exercises added on the fly in build state
   isCustomSession = true;
   selectedTemplate = { session: name, type: customType, exercises: [] };
   activeExercises = [];
-  document.getElementById('exercise-tiles').innerHTML =
-    '<div id="no-ex-msg" style="text-align:center;color:var(--muted);font-size:13px;padding:20px 0;">No exercises yet.<br/>Tap below to add your first one.</div>';
-  document.getElementById('prog-session-name').textContent = name;
+
+  // Show build state
+  document.getElementById('custom-build-title').textContent = name;
+  document.getElementById('custom-build-exercises').innerHTML =
+    '<div id="custom-no-ex-msg" style="text-align:center;color:var(--muted);font-size:13px;padding:16px 0;">No exercises yet — add your first one below.</div>';
+  document.getElementById('custom-start-btn').disabled = true;
+  document.getElementById('custom-start-btn').style.opacity = '.4';
+  document.getElementById('log-state-select').style.display = 'none';
+  document.getElementById('log-state-custom').style.display = 'block';
+  document.getElementById('content').scrollTop = 0;
+}
+
+// Called when user taps "Start workout" from the build state — starts timer
+function startCustomTimer() {
+  if (!activeExercises.length) return;
+  // Move exercises into the workout view
+  document.getElementById('exercise-tiles').innerHTML = '';
+  activeExercises.forEach((ex, i) => {
+    const div = document.createElement('div');
+    div.innerHTML = buildTile(ex, i);
+    document.getElementById('exercise-tiles').appendChild(div.firstElementChild);
+  });
+  document.getElementById('prog-session-name').textContent = selectedTemplate.session;
   doneCount = 0;
   updateProgress();
   document.getElementById('add-ex-fly-btn').classList.remove('hidden');
-  isCustomSession = false;
-  document.getElementById('add-ex-fly-btn').classList.add('hidden');
-  document.getElementById('log-state-select').style.display = 'none';
+  document.getElementById('log-state-custom').style.display = 'none';
   document.getElementById('log-state-workout').style.display = 'block';
-  // Timer
+  // Start timer
   timerSeconds = 0;
   document.getElementById('header-right').style.display = 'none';
   document.getElementById('timer-badge').style.display = 'block';
@@ -1460,15 +1495,24 @@ function confirmAddEx() {
   activeExercises.push(ex);
   selectedTemplate.exercises.push(ex);
 
-  // Remove "no exercises" msg if present
-  const msg = document.getElementById('no-ex-msg');
-  if (msg) msg.remove();
+  // Remove placeholder messages
+  ['no-ex-msg','custom-no-ex-msg'].forEach(id => { const el=document.getElementById(id); if(el) el.remove(); });
 
-  // Append new tile
   const idx = activeExercises.length - 1;
   const div = document.createElement('div');
   div.innerHTML = buildTile(ex, idx);
-  document.getElementById('exercise-tiles').appendChild(div.firstElementChild);
+
+  if (document.getElementById('log-state-custom').style.display !== 'none') {
+    // Still in build state — append to build list
+    document.getElementById('custom-build-exercises').appendChild(div.firstElementChild);
+    // Enable Start workout button once ≥1 exercise
+    const startBtn = document.getElementById('custom-start-btn');
+    startBtn.disabled = false;
+    startBtn.style.opacity = '1';
+  } else {
+    // Already in active workout — append to exercise tiles
+    document.getElementById('exercise-tiles').appendChild(div.firstElementChild);
+  }
 
   updateProgress();
   document.getElementById('add-ex-modal').classList.add('hidden');
@@ -1510,8 +1554,10 @@ async function finishCustomWorkout(saveAsTempl) {
   setTimeout(() => toast.classList.add('hidden'), 2800);
   setTimeout(() => {
     isCustomSession = false;
+    activeExercises = [];
     document.getElementById('add-ex-fly-btn').classList.add('hidden');
     document.getElementById('log-state-workout').style.display = 'none';
+    document.getElementById('log-state-custom').style.display = 'none';
     document.getElementById('log-state-select').style.display = 'block';
   }, 3200);
 }
