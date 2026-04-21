@@ -117,7 +117,8 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
 .complete-btn.ready{opacity:1;}
 .add-ex-fly-btn{width:100%;padding:13px;border:1.5px dashed var(--border);border-radius:11px;font-family:'Inter',sans-serif;font-size:13px;color:var(--accent);cursor:pointer;background:var(--accent-light);margin-top:4px;margin-bottom:4px;font-weight:600;}
 #custom-build-exercises .ex-tile .ex-inputs-box{pointer-events:none;opacity:0.5;}
-#custom-build-exercises .ex-check{pointer-events:none;opacity:0.4;}
+#custom-build-exercises .ex-tile .ex-check{pointer-events:none;opacity:0.4;}
+#log-state-custom .add-ex-fly-btn{pointer-events:auto !important;}
 
 /* History */
 .hist-row{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;}
@@ -310,8 +311,8 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
           <div id="custom-build-exercises">
             <div id="custom-no-ex-msg" style="text-align:center;color:var(--muted);font-size:13px;padding:16px 0;">No exercises yet — add your first one below.</div>
           </div>
-          <button class="add-ex-fly-btn" style="margin-top:8px;" onclick="populateAddExDropdown();document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
         </div>
+        <button class="add-ex-fly-btn" onclick="populateAddExDropdown();document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
         <button class="start-btn" id="custom-start-btn" onclick="startCustomTimer()" style="opacity:.4;" disabled>Start workout</button>
       </div>
       <!-- State B: active workout -->
@@ -510,13 +511,14 @@ let currentTab = 'dashboard';
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 function parseDate(s) {
   if (!s) return null;
-  // Already a YYYY-MM-DD string
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(s))) {
-    const [y,m,d] = String(s).split('-').map(Number);
-    return new Date(y, m-1, d);
+  const str = String(s).trim();
+  // YYYY-MM-DD — use local time explicitly to avoid UTC offset shifting the day
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y,m,d] = str.split('-').map(Number);
+    return new Date(y, m-1, d, 12, 0, 0); // noon = safe from DST issues
   }
   // Try direct parse
-  const d = new Date(s);
+  const d = new Date(str);
   return isNaN(d.getTime()) ? null : d;
 }
 function fmtDate(s) {
@@ -983,12 +985,13 @@ function renderDashboard() {
   populateOtherExercises();
 }
 
-// Returns unique {date, session, type} per workout day
+// Returns unique {date, session, type} per workout day — most recent first
 function getUniqueSessions() {
   const seen = new Set(), result = [];
-  // Sort logRows descending
-  const sorted = [...logRows].sort((a,b) => String(b.date).localeCompare(String(a.date)));
-  sorted.forEach(row => {
+  // Traverse logRows in REVERSE so last-appended (most recent) wins for same date
+  const indexed = logRows.map((row, i) => ({ row, i }));
+  indexed.reverse();
+  indexed.forEach(({ row, i }) => {
     if (!row.date || !row.session) return;
     const dateStr = String(row.date).slice(0,10);
     const key = dateStr + '|' + row.session;
@@ -996,7 +999,14 @@ function getUniqueSessions() {
     seen.add(key);
     const tmpl = templates.find(t => t.session === row.session);
     const type = tmpl ? tmpl.type : 'weight';
-    result.push({ date: dateStr, session: row.session, type, duration: row.duration || '' });
+    // Get duration from the first row of this session (index 0 = has duration)
+    const dur = logRows.find(r => String(r.date).slice(0,10)===dateStr && r.session===row.session && r.duration)?.duration || '';
+    result.push({ date: dateStr, session: row.session, type, duration: dur, idx: i });
+  });
+  // Sort by date desc, then by row index desc (later rows = more recent same-day)
+  result.sort((a,b) => {
+    const dc = String(b.date).localeCompare(String(a.date));
+    return dc !== 0 ? dc : b.idx - a.idx;
   });
   return result;
 }
