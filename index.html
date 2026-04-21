@@ -176,6 +176,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
 .sets-btn{width:28px;height:28px;border:1.5px solid var(--border);border-radius:7px;background:var(--card);font-family:'Inter',sans-serif;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;padding:0;display:flex;align-items:center;justify-content:center;}
 .sets-btn.sets-active{background:var(--accent-light);border-color:var(--accent);color:var(--accent-text);font-weight:700;}
 .set-preview{width:24px;height:24px;border-radius:6px;background:var(--accent-light);border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--accent-text);}
+.addex-prefilled{background:var(--accent-light) !important;border-color:var(--accent) !important;}
 
 /* Confetti + Toast */
 .confetti-piece{position:fixed;width:9px;height:9px;top:-10px;opacity:0;pointer-events:none;z-index:999;border-radius:2px;animation:cffall linear forwards;}
@@ -307,7 +308,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
           <div id="custom-build-exercises">
             <div id="custom-no-ex-msg" style="text-align:center;color:var(--muted);font-size:13px;padding:16px 0;">No exercises yet — add your first one below.</div>
           </div>
-          <button class="add-ex-fly-btn" style="margin-top:8px;" onclick="document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
+          <button class="add-ex-fly-btn" style="margin-top:8px;" onclick="populateAddExDropdown();document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
         </div>
         <button class="start-btn" id="custom-start-btn" onclick="startCustomTimer()" style="opacity:.4;" disabled>Start workout</button>
       </div>
@@ -324,7 +325,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
           </div>
           <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
           <div id="exercise-tiles"></div>
-          <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="document.getElementById('add-ex-modal').classList.remove('hidden')" style="margin-top:10px;">+ Add exercise</button>
+          <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="populateAddExDropdown();document.getElementById('add-ex-modal').classList.remove('hidden')" style="margin-top:10px;">+ Add exercise</button>
         </div>
         <button class="complete-btn" id="complete-btn" onclick="completeWorkout()">Complete workout</button>
       </div>
@@ -427,7 +428,13 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
       </div>
       <div class="field-group" style="margin-bottom:12px;">
         <div class="field-lbl">Exercise name *</div>
-        <input class="field-inp" id="addex-name" placeholder="e.g. Bench press" type="text"/>
+        <div style="position:relative;">
+          <select id="addex-select" onchange="onAddExSelect()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:15px;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);outline:none;-webkit-appearance:none;appearance:none;">
+            <option value="">+ New exercise (type below)</option>
+          </select>
+          <div style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);font-size:12px;">▾</div>
+        </div>
+        <input class="field-inp" id="addex-name" placeholder="Exercise name" type="text" style="margin-top:8px;"/>
       </div>
       <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-start;">
         <div style="flex:1;">
@@ -1474,6 +1481,84 @@ function setAddExSets(n, btn) {
   });
 }
 
+// Build the exercise knowledge base from templates + log history
+function getExerciseKnowledge() {
+  const map = {};
+  // From templates (most authoritative)
+  templates.forEach(t => {
+    t.exercises.forEach(ex => {
+      if (!ex.exercise) return;
+      const key = ex.exercise.toLowerCase();
+      if (!map[key]) map[key] = {
+        name: ex.exercise,
+        unit: ex.unit || 'kg',
+        sets: ex.sets || 3,
+        repMin: ex.repMin || '',
+        repMax: ex.repMax || '',
+        rest: ex.rest || '',
+      };
+    });
+  });
+  // From log history (fill in any gaps)
+  logRows.forEach(row => {
+    if (!row.exercise) return;
+    const key = row.exercise.toLowerCase();
+    if (!map[key]) map[key] = {
+      name: row.exercise,
+      unit: 'kg',
+      sets: parseInt(row.sets) || 3,
+      repMin: row.repMin || '',
+      repMax: row.repMax || '',
+      rest: row.rest || '',
+    };
+  });
+  return Object.values(map).sort((a,b) => a.name.localeCompare(b.name));
+}
+
+function populateAddExDropdown() {
+  const sel = document.getElementById('addex-select');
+  if (!sel) return;
+  const exercises = getExerciseKnowledge();
+  sel.innerHTML = '<option value="">+ New exercise (type below)</option>' +
+    exercises.map(e => `<option value="${e.name.replace(/"/g,'&quot;')}">${e.name}</option>`).join('');
+}
+
+function onAddExSelect() {
+  const sel = document.getElementById('addex-select');
+  const name = sel.value;
+  const nameInp = document.getElementById('addex-name');
+  if (!name) {
+    // Cleared — reset to defaults
+    nameInp.value = '';
+    nameInp.placeholder = 'Exercise name';
+    nameInp.classList.remove('addex-prefilled');
+    return;
+  }
+  // Pre-populate from knowledge base
+  const exercises = getExerciseKnowledge();
+  const ex = exercises.find(e => e.name === name);
+  if (!ex) return;
+  nameInp.value = ex.name;
+  nameInp.classList.add('addex-prefilled');
+  // Unit
+  addExUnit = ex.unit || 'kg';
+  document.querySelectorAll('#add-ex-modal .unit-btn').forEach(b => b.classList.remove('unit-active'));
+  const unitBtn = document.getElementById('addex-unit-' + addExUnit);
+  if (unitBtn) unitBtn.classList.add('unit-active');
+  document.getElementById('addex-rep-row').style.display = addExUnit === 'kg' ? 'flex' : 'none';
+  // Sets
+  addExSets = ex.sets || 3;
+  [1,2,3].forEach(i => {
+    const b = document.getElementById('addex-sets-'+i);
+    if(b) b.classList.toggle('sets-active', i === addExSets);
+  });
+  // Rep range
+  document.getElementById('addex-repmin').value = ex.repMin || '';
+  document.getElementById('addex-repmax').value = ex.repMax || '';
+  // Rest
+  document.getElementById('addex-rest').value = ex.rest || '';
+}
+
 function confirmAddEx() {
   const name = document.getElementById('addex-name').value.trim();
   if (!name) { document.getElementById('addex-name').focus(); return; }
@@ -1526,6 +1611,9 @@ function confirmAddEx() {
   document.getElementById('addex-unit-kg').classList.add('unit-active');
   [1,2,3].forEach(i => document.getElementById('addex-sets-'+i)?.classList.toggle('sets-active', i===3));
   document.getElementById('addex-rep-row').style.display = 'flex';
+  document.getElementById('addex-name').classList.remove('addex-prefilled');
+  const sel = document.getElementById('addex-select');
+  if(sel) sel.value = '';
 }
 
 // After completing a custom workout — ask about template
