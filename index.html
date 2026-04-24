@@ -180,6 +180,15 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
 .sets-btn.sets-active{background:var(--accent-light);border-color:var(--accent);color:var(--accent-text);font-weight:700;}
 .set-preview{width:24px;height:24px;border-radius:6px;background:var(--accent-light);border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--accent-text);}
 .addex-prefilled{background:var(--accent-light) !important;border-color:var(--accent) !important;}
+.stats-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);}
+.stats-row:last-child{border-bottom:none;padding-bottom:0;}
+.stats-date{font-size:11px;color:var(--muted);min-width:60px;}
+.stats-weight{font-size:13px;font-weight:600;color:var(--text);min-width:48px;}
+.stats-sets{display:flex;gap:4px;flex-wrap:wrap;}
+.stats-set-pill{font-size:11px;font-family:'Inter',monospace;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 6px;color:var(--text2);}
+.stats-set-pill.hit{background:var(--green-light);border-color:var(--green);color:var(--green);}
+.stats-empty{font-size:13px;color:var(--muted);text-align:center;padding:16px 0;}
+.stats-icon-btn{width:20px;height:20px;border-radius:4px;border:1.5px solid #d1d5db;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;}
 
 /* Confetti + Toast */
 .confetti-piece{position:fixed;width:9px;height:9px;top:-10px;opacity:0;pointer-events:none;z-index:999;border-radius:2px;animation:cffall linear forwards;}
@@ -378,6 +387,17 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
       <div class="modal-btns"><button class="btn-pri" onclick="document.getElementById('instr-modal').classList.add('hidden')">Got it</button></div>
     </div>
   </div>
+  <!-- Stats modal: last 6 sets for an exercise -->
+  <div class="overlay hidden" id="stats-modal">
+    <div class="modal" style="max-width:320px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <h3 id="stats-modal-title" style="margin:0;font-size:16px;"></h3>
+        <button onclick="document.getElementById('stats-modal').classList.add('hidden')" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0;">×</button>
+      </div>
+      <div id="stats-modal-body"></div>
+    </div>
+  </div>
+
   <div class="overlay hidden" id="preview-modal">
     <div class="modal">
       <h3 id="preview-title"></h3>
@@ -502,7 +522,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
 <script>
 const API = '/api/sheets';
 let logRows = [], templates = [], selectedTemplate = null, activeExercises = [];
-let timerInterval = null, timerSeconds = 0, doneCount = 0;
+let timerInterval = null, timerSeconds = 0, timerStartTime = null, doneCount = 0;
 let rangeDays = 30;
 let saveAsTemplate = false, customType = 'weight', customExCount = 0;
 let currentTab = 'dashboard';
@@ -674,16 +694,7 @@ function startWorkout() {
   document.getElementById('add-ex-fly-btn').classList.add('hidden');
   document.getElementById('log-state-select').style.display = 'none';
   document.getElementById('log-state-workout').style.display = 'block';
-  // Timer
-  timerSeconds = 0;
-  document.getElementById('header-right').style.display = 'none';
-  document.getElementById('timer-badge').style.display = 'block';
-  clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    timerSeconds++;
-    const m = Math.floor(timerSeconds/60), s = timerSeconds % 60;
-    document.getElementById('timer-badge').textContent = (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
-  }, 1000);
+  startTimer();
   document.getElementById('content').scrollTop = 0;
 }
 
@@ -770,12 +781,17 @@ function buildTile(ex, i) {
       </div>`;
   }
 
-  // Store instructions in global map to avoid quote escaping issues in onclick
-  window._instrMap = window._instrMap || {};
-  const instrKey = 'ex_' + i;
-  if (ex.instructions) window._instrMap[instrKey] = { title: ex.exercise, body: ex.instructions };
-  const qBtn = ex.instructions
-    ? `<button class="q-btn" onclick="showInstrKey('${instrKey}')">?</button>` : '';
+  // Store data in global map to avoid quote escaping in onclick attrs
+  window._exMap = window._exMap || {};
+  const exKey = 'ex_' + i;
+  window._exMap[exKey] = { name: ex.exercise, instructions: ex.instructions || '', repMin: ex.repMin, repMax: ex.repMax };
+  // Stats icon (always shown) + instructions button (only if instructions exist)
+  const statsBtn = `<button class="stats-icon-btn" onclick="showExStats('${exKey}')" title="Performance history">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+    </svg>
+  </button>`;
+  const qBtn = statsBtn;
 
   return `<div class="ex-tile" id="ex-tile-${i}">
     <div class="ex-head">
@@ -1041,9 +1057,20 @@ function groupByWeek(dates) {
   const map = {};
   dates.forEach(d => {
     const wk = getWeekKey(d);
-    if (!map[wk]) map[wk] = { label: fmtDate(wk), count: 0, weight: 0, cardio: 0 };
+    if (!map[wk]) map[wk] = { label: fmtDate(wk), count: 0 };
     map[wk].count++;
   });
+  // Fill empty weeks between first and last so bar chart x-axis is consistent
+  const keys = Object.keys(map).sort();
+  if (keys.length >= 2) {
+    let cur = new Date(keys[0] + 'T12:00:00');
+    const last = new Date(keys[keys.length-1] + 'T12:00:00');
+    while (cur <= last) {
+      const wk = cur.toISOString().split('T')[0];
+      if (!map[wk]) map[wk] = { label: fmtDate(wk), count: 0 };
+      cur.setDate(cur.getDate() + 7);
+    }
+  }
   return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>v);
 }
 
@@ -1464,16 +1491,7 @@ function startCustomTimer() {
   document.getElementById('add-ex-fly-btn').classList.remove('hidden');
   document.getElementById('log-state-custom').style.display = 'none';
   document.getElementById('log-state-workout').style.display = 'block';
-  // Start timer
-  timerSeconds = 0;
-  document.getElementById('header-right').style.display = 'none';
-  document.getElementById('timer-badge').style.display = 'block';
-  clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    timerSeconds++;
-    const m = Math.floor(timerSeconds/60), s = timerSeconds % 60;
-    document.getElementById('timer-badge').textContent = (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
-  }, 1000);
+  startTimer();
   document.getElementById('content').scrollTop = 0;
 }
 
@@ -1667,6 +1685,76 @@ async function finishCustomWorkout(saveAsTempl) {
 }
 
 // ── HELPERS ───────────────────────────────────────────────
+// ── TIMER (wall-clock based — survives screen off) ──────
+function startTimer() {
+  timerStartTime = Date.now();
+  timerSeconds = 0;
+  document.getElementById('header-right').style.display = 'none';
+  document.getElementById('timer-badge').style.display = 'block';
+  clearInterval(timerInterval);
+  timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function updateTimerDisplay() {
+  if (!timerStartTime) return;
+  timerSeconds = Math.floor((Date.now() - timerStartTime) / 1000);
+  const m = Math.floor(timerSeconds / 60), s = timerSeconds % 60;
+  const badge = document.getElementById('timer-badge');
+  if (badge) badge.textContent = (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+}
+
+// Resync timer when screen wakes up
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && timerStartTime) updateTimerDisplay();
+});
+
+function showExStats(key) {
+  const entry = (window._exMap || {})[key];
+  if (!entry) return;
+  const name = entry.name;
+  const repMin = parseInt(entry.repMin) || 0;
+  const repMax = parseInt(entry.repMax) || 99;
+
+  // Get last 6 logged sets for this exercise
+  const rows = logRows
+    .filter(r => r.exercise === name && (r.set1 || r.set2 || r.set3))
+    .slice(-6)
+    .reverse(); // most recent first
+
+  document.getElementById('stats-modal-title').textContent = name;
+
+  if (!rows.length) {
+    document.getElementById('stats-modal-body').innerHTML =
+      '<div class="stats-empty">No sets logged yet for this exercise.</div>';
+  } else {
+    document.getElementById('stats-modal-body').innerHTML = rows.map(r => {
+      const sets = parseInt(r.sets) || 3;
+      const pills = [r.set1, r.set2, r.set3]
+        .slice(0, sets)
+        .map(v => {
+          if (!v && v !== 0) return '';
+          const n = parseInt(v);
+          const hit = !isNaN(n) && n >= repMin && (repMax >= 99 || n <= repMax);
+          return `<div class="stats-set-pill ${hit?'hit':''}">${v}</div>`;
+        }).filter(Boolean).join('');
+      const wt = r.weight ? `${r.weight}kg` : '—';
+      return `<div class="stats-row">
+        <span class="stats-date">${fmtDate(r.date)}</span>
+        <span class="stats-weight">${wt}</span>
+        <div class="stats-sets">${pills}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Show instructions at bottom if available
+  if (entry.instructions) {
+    document.getElementById('stats-modal-body').innerHTML +=
+      `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);font-style:italic;">${entry.instructions}</div>`;
+  }
+
+  document.getElementById('stats-modal').classList.remove('hidden');
+}
+
 function showInstr(title, body) {
   document.getElementById('instr-title').textContent = title;
   document.getElementById('instr-body').textContent = body;
