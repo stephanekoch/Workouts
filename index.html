@@ -1024,6 +1024,7 @@ function getUniqueSessions() {
     const dc = String(b.date).localeCompare(String(a.date));
     return dc !== 0 ? dc : b.idx - a.idx;
   });
+  // slice AFTER sort so we get the 15 most recent
   return result;
 }
 
@@ -1040,19 +1041,47 @@ function getFilteredSessions() {
   return getUniqueSessions().filter(w => w.date >= cutStr);
 }
 
-function renderCharts() {
-  const sessions = getFilteredSessions();
-  // Group into weeks
-  const weeks = groupByWeek(sessions.map(s => s.date));
-
-  renderBarChart('chart-weekly', weeks, s => s.count, 'count', '#7c3aed');
-  renderSplitChart('chart-split', sessions);
-  renderStrengthChart('chart-bench', 'Barbell bench press');
-  renderStrengthChart('chart-squats', 'Back squats');
-  renderStrengthChart('chart-deadlifts', 'Trap-bar deadlifts');
-  renderOtherChart();
+// Generate every Monday in the date range
+function generateWeekRange() {
+  const end = new Date();
+  end.setHours(12,0,0,0);
+  const start = new Date();
+  start.setDate(start.getDate() - rangeDays);
+  start.setHours(12,0,0,0);
+  // Snap start to nearest Monday on or after
+  const day = start.getDay() || 7;
+  if (day !== 1) start.setDate(start.getDate() + (8 - day));
+  const weeks = [];
+  let cur = new Date(start);
+  while (cur <= end) {
+    weeks.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate() + 7);
+  }
+  return weeks;
 }
 
+function renderCharts() {
+  const sessions = getFilteredSessions();
+  const allWeeks = generateWeekRange();
+
+  // Weekly workouts: count sessions per week
+  const weeklyData = allWeeks.map(wk => {
+    const nextWk = new Date(wk + 'T12:00:00');
+    nextWk.setDate(nextWk.getDate() + 7);
+    const nextWkStr = nextWk.toISOString().split('T')[0];
+    const count = sessions.filter(s => s.date >= wk && s.date < nextWkStr).length;
+    return { wk, label: fmtDate(wk), count };
+  });
+
+  renderBarChart('chart-weekly', weeklyData, s => s.count, '#7c3aed');
+  renderSplitChart('chart-split', sessions, allWeeks);
+  renderStrengthChart('chart-bench', 'Barbell bench press', allWeeks);
+  renderStrengthChart('chart-squats', 'Back squats', allWeeks);
+  renderStrengthChart('chart-deadlifts', 'Trap-bar deadlifts', allWeeks);
+  renderOtherChart(allWeeks);
+}
+
+// groupByWeek kept for compatibility but charts now use allWeeks directly
 function groupByWeek(dates) {
   const map = {};
   dates.forEach(d => {
@@ -1060,21 +1089,10 @@ function groupByWeek(dates) {
     if (!map[wk]) map[wk] = { label: fmtDate(wk), count: 0 };
     map[wk].count++;
   });
-  // Fill empty weeks between first and last so bar chart x-axis is consistent
-  const keys = Object.keys(map).sort();
-  if (keys.length >= 2) {
-    let cur = new Date(keys[0] + 'T12:00:00');
-    const last = new Date(keys[keys.length-1] + 'T12:00:00');
-    while (cur <= last) {
-      const wk = cur.toISOString().split('T')[0];
-      if (!map[wk]) map[wk] = { label: fmtDate(wk), count: 0 };
-      cur.setDate(cur.getDate() + 7);
-    }
-  }
   return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>v);
 }
 
-function renderBarChart(containerId, data, valueFn, yLabel, color) {
+function renderBarChart(containerId, data, valueFn, color) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const vals = data.map(valueFn);
@@ -1138,17 +1156,23 @@ function renderBarChart(containerId, data, valueFn, yLabel, color) {
   });
 }
 
-function renderSplitChart(containerId, sessions) {
+function renderSplitChart(containerId, sessions, allWeeks) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  const weekMap = {};
+  // Build session map by week
+  const sessionMap = {};
   sessions.forEach(s => {
     const wk = getWeekKey(s.date);
-    if (!weekMap[wk]) weekMap[wk] = { label: fmtDate(wk), weight: 0, cardio: 0 };
-    if (s.type === 'cardio') weekMap[wk].cardio++;
-    else weekMap[wk].weight++;
+    if (!sessionMap[wk]) sessionMap[wk] = { weight: 0, cardio: 0 };
+    if (s.type === 'cardio') sessionMap[wk].cardio++;
+    else sessionMap[wk].weight++;
   });
-  const weeks = Object.entries(weekMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>v);
+  // Use allWeeks for x-axis (every Monday in range)
+  const weeks = allWeeks.map(wk => ({
+    label: fmtDate(wk),
+    weight: (sessionMap[wk]||{}).weight || 0,
+    cardio: (sessionMap[wk]||{}).cardio || 0,
+  }));
   if (!weeks.length) { container.innerHTML = '<div class="chart-empty">No data for this period</div>'; return; }
 
   const W=500,H=90,PL=32,PT=8,PB=20,PR=10;
@@ -1199,15 +1223,15 @@ function renderSplitChart(containerId, sessions) {
   });
 }
 
-function renderStrengthChart(containerId, exerciseName) {
+function renderStrengthChart(containerId, exerciseName, allWeeks) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-rangeDays);
   const cutStr = cutoff.toISOString().split('T')[0];
 
-  // Group by week: best weight where all sets >= repMin
+  // Build week → best weight map (where all sets completed >= repMin)
   const weekMap = {};
-  logRows.filter(r => r.exercise === exerciseName && r.date >= cutStr).forEach(r => {
+  logRows.filter(r => r.exercise === exerciseName && String(r.date).slice(0,10) >= cutStr).forEach(r => {
     const w = parseFloat(r.weight);
     if (isNaN(w) || w <= 0) return;
     const repMin = parseInt(r.repMin) || 0;
@@ -1215,15 +1239,15 @@ function renderStrengthChart(containerId, exerciseName) {
     const s1=parseInt(r.set1), s2=parseInt(r.set2), s3=parseInt(r.set3);
     const ok = sets >= 3
       ? (!isNaN(s1)&&s1>=repMin&&!isNaN(s2)&&s2>=repMin&&!isNaN(s3)&&s3>=repMin)
-      : sets >= 2
-        ? (!isNaN(s1)&&s1>=repMin&&!isNaN(s2)&&s2>=repMin)
-        : (!isNaN(s1)&&s1>=repMin);
+      : sets >= 2 ? (!isNaN(s1)&&s1>=repMin&&!isNaN(s2)&&s2>=repMin)
+      : (!isNaN(s1)&&s1>=repMin);
     if (!ok) return;
     const wk = getWeekKey(r.date);
-    if (!weekMap[wk] || w > weekMap[wk].val) weekMap[wk] = { label: fmtDate(wk), val: w };
+    if (!weekMap[wk] || w > weekMap[wk]) weekMap[wk] = w;
   });
 
-  const points = Object.entries(weekMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>v);
+  // Map allWeeks → value or null
+  const points = allWeeks.map(wk => ({ wk, label: fmtDate(wk), val: weekMap[wk] || null }));
   renderLineChart(container, points, v => v.val, v => v.label, '#7c3aed', 'kg');
 }
 
@@ -1236,46 +1260,63 @@ function populateOtherExercises() {
   renderOtherChart();
 }
 
-function renderOtherChart() {
+function renderOtherChart(allWeeks) {
   const select = document.getElementById('other-ex-select');
   const container = document.getElementById('chart-other');
   if (!select || !container || !select.value) {
     if(container) container.innerHTML = '<div class="chart-empty">No data</div>';
     return;
   }
+  allWeeks = allWeeks || generateWeekRange();
   const exerciseName = select.value;
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-rangeDays);
   const cutStr = cutoff.toISOString().split('T')[0];
   const weekMap = {};
-  logRows.filter(r => r.exercise === exerciseName && r.date >= cutStr).forEach(r => {
+  logRows.filter(r => r.exercise === exerciseName && String(r.date).slice(0,10) >= cutStr).forEach(r => {
     const w = parseFloat(r.weight);
     if (isNaN(w) || w <= 0) return;
     const wk = getWeekKey(r.date);
-    if (!weekMap[wk] || w > weekMap[wk].val) weekMap[wk] = { label: fmtDate(wk), val: w };
+    if (!weekMap[wk] || w > weekMap[wk]) weekMap[wk] = w;
   });
-  const points = Object.entries(weekMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>v);
+  const points = allWeeks.map(wk => ({ wk, label: fmtDate(wk), val: weekMap[wk] || null }));
   renderLineChart(container, points, v=>v.val, v=>v.label, '#7c3aed', 'kg');
 }
 
 function renderLineChart(container, data, valFn, labelFn, color, unit) {
   if (!container) return;
   const vals = data.map(valFn);
-  if (!vals.length || vals.every(v=>v===null)) { container.innerHTML = '<div class="chart-empty">No data for this period</div>'; return; }
+  const nonNull = vals.filter(v => v !== null);
+  if (!nonNull.length) { container.innerHTML = '<div class="chart-empty">No data for this period</div>'; return; }
   const W=500,H=90,PL=40,PT=8,PB=20,PR=12;
   const iW=W-PL-PR, iH=H-PT-PB;
   const n=vals.length;
-  const minV=Math.min(...vals), maxV=Math.max(...vals);
+  const minV=Math.min(...nonNull), maxV=Math.max(...nonNull);
   const vRange = (maxV-minV) || 1;
   const yMin = minV - vRange*.1, yMax = maxV + vRange*.15;
   const yRange = yMax - yMin;
   const toX = i => PL + (n>1 ? (i/(n-1))*iW : iW/2);
   const toY = v => PT + iH - ((v-yMin)/yRange)*iH;
 
-  const pathD = vals.map((v,i) => (i===0?'M':'L')+toX(i).toFixed(1)+','+toY(v).toFixed(1)).join(' ');
-  const fillD = pathD + ` L${toX(n-1).toFixed(1)},${(PT+iH).toFixed(1)} L${PL},${(PT+iH).toFixed(1)} Z`;
+  // Build path skipping null values (empty weeks = gaps in line)
+  let pathD = '', fillD = '', firstX = null, lastX = null;
+  vals.forEach((v,i) => {
+    if (v === null) return;
+    const x = toX(i), y = toY(v);
+    pathD += (pathD === '' ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+    if (firstX === null) firstX = x;
+    lastX = x;
+  });
+  // Fill area uses first and last non-null points
+  const nonNullVals = vals.filter(v=>v!==null);
+  const firstNonNull = nonNullVals[0], lastNonNull = nonNullVals[nonNullVals.length-1];
+  if (firstX !== null) {
+    fillD = pathD + ` L${lastX.toFixed(1)},${(PT+iH).toFixed(1)} L${firstX.toFixed(1)},${(PT+iH).toFixed(1)} Z`;
+  }
 
-  // Latest pill
-  const lv = vals[n-1], lx = toX(n-1), ly = toY(lv);
+  // Latest pill — last non-null value
+  const lastNonNullIdx = vals.reduce((acc, v, i) => v !== null ? i : acc, -1);
+  if (lastNonNullIdx < 0) return;
+  const lv = vals[lastNonNullIdx], lx = toX(lastNonNullIdx), ly = toY(lv);
   const pillW = 52, pillH = 16;
   const px = Math.min(Math.max(lx-pillW/2, PL), W-PR-pillW);
   const py = Math.max(PT, ly-22);
@@ -1311,8 +1352,9 @@ function renderLineChart(container, data, valFn, labelFn, color, unit) {
     const scaleX = W / rect.width;
     const mx = (e.clientX - rect.left) * scaleX;
     // Find nearest data point
-    let best = 0, bestDist = Infinity;
-    vals.forEach((v,i) => { const d = Math.abs(toX(i)-mx); if(d<bestDist){bestDist=d;best=i;} });
+    let best = -1, bestDist = Infinity;
+    vals.forEach((v,i) => { if(v===null) return; const d=Math.abs(toX(i)-mx); if(d<bestDist){bestDist=d;best=i;} });
+    if(best<0) return;
     const v = vals[best];
     if(v===null) return;
     const tip = document.getElementById('ltip-' + svgIdL);
@@ -1328,7 +1370,11 @@ function renderLineChart(container, data, valFn, labelFn, color, unit) {
 
 // ── HISTORY ───────────────────────────────────────────────
 function showWorkoutDetail(date, session) {
-  const rows = logRows.filter(r => r.date === date && r.session === session);
+  // Match dates robustly — both as YYYY-MM-DD slices
+  const rows = logRows.filter(r =>
+    String(r.date).slice(0,10) === String(date).slice(0,10) &&
+    r.session === session
+  );
   const dur = rows.find(r => r.duration)?.duration;
 
   document.getElementById('detail-title').textContent = session;
@@ -1388,7 +1434,10 @@ function showWorkoutDetail(date, session) {
 
 function renderHistory() {
   const list = document.getElementById('history-list');
-  const sessions = getUniqueSessions().slice(0, 15);
+  // Sort most recent first, take top 15
+  const sessions = getUniqueSessions()
+    .sort((a,b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 15);
   if (!sessions.length) {
     list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;margin-top:40px;">No workouts logged yet.</div>';
     return;
