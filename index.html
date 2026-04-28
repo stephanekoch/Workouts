@@ -532,14 +532,28 @@ function todayStr() { return new Date().toISOString().split('T')[0]; }
 function parseDate(s) {
   if (!s) return null;
   const str = String(s).trim();
-  // YYYY-MM-DD — use local time explicitly to avoid UTC offset shifting the day
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    const [y,m,d] = str.split('-').map(Number);
-    return new Date(y, m-1, d, 12, 0, 0); // noon = safe from DST issues
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    const [y,m,d] = str.slice(0,10).split('-').map(Number);
+    return new Date(y, m-1, d, 12, 0, 0);
   }
-  // Try direct parse
+  // Full JS date string e.g. "Tue Apr 21 2026 00:00:00 GMT+0100..."
   const d = new Date(str);
-  return isNaN(d.getTime()) ? null : d;
+  if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+  return null;
+}
+
+// Normalise any date value to YYYY-MM-DD string
+function toDateStr(s) {
+  if (!s) return '';
+  const str = String(s).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0,10);
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
 }
 function fmtDate(s) {
   const d = parseDate(s);
@@ -614,6 +628,7 @@ async function loadData() {
     renderDashboard();
     renderHistory();
     switchTab('dashboard');
+
   } catch(err) {
     document.getElementById('loading-screen').classList.add('hidden');
     document.getElementById('dash-error').innerHTML =
@@ -853,7 +868,7 @@ function getPersonalBest(exerciseName, days) {
   let best = null;
   logRows.forEach(row => {
     if (row.exercise !== exerciseName) return;
-    if (row.date < cutStr) return;
+    if (toDateStr(row.date) < cutStr) return;
     const w = parseFloat(row.weight);
     const repMin = parseInt(row.repMin) || 0;
     const repMax = parseInt(row.repMax) || 99;
@@ -1009,14 +1024,14 @@ function getUniqueSessions() {
   indexed.reverse();
   indexed.forEach(({ row, i }) => {
     if (!row.date || !row.session) return;
-    const dateStr = String(row.date).slice(0,10);
+    const dateStr = toDateStr(row.date);
     const key = dateStr + '|' + row.session;
     if (seen.has(key)) return;
     seen.add(key);
     const tmpl = templates.find(t => t.session === row.session);
     const type = tmpl ? tmpl.type : 'weight';
     // Get duration from the first row of this session (index 0 = has duration)
-    const dur = logRows.find(r => String(r.date).slice(0,10)===dateStr && r.session===row.session && r.duration)?.duration || '';
+    const dur = logRows.find(r => toDateStr(r.date)===dateStr && r.session===row.session && r.duration)?.duration || '';
     result.push({ date: dateStr, session: row.session, type, duration: dur, idx: i });
   });
   // Sort by date desc, then by row index desc (later rows = more recent same-day)
@@ -1181,7 +1196,7 @@ function renderSplitChart(containerId, sessions, allWeeks) {
   // Build session map by week
   const sessionMap = {};
   sessions.forEach(s => {
-    const wk = getWeekKey(s.date);
+    const wk = getWeekKey(toDateStr(s.date));
     if (!sessionMap[wk]) sessionMap[wk] = { weight: 0, cardio: 0 };
     if (s.type === 'cardio') sessionMap[wk].cardio++;
     else sessionMap[wk].weight++;
@@ -1251,7 +1266,7 @@ function renderStrengthChart(containerId, exerciseName, allWeeks) {
 
   // Build week → best weight map (where all sets completed >= repMin)
   const weekMap = {};
-  logRows.filter(r => r.exercise === exerciseName && String(r.date).slice(0,10) >= cutStr).forEach(r => {
+  logRows.filter(r => r.exercise === exerciseName && toDateStr(r.date) >= cutStr).forEach(r => {
     const w = parseFloat(r.weight);
     if (isNaN(w) || w <= 0) return;
     const repMin = parseInt(r.repMin) || 0;
@@ -1262,7 +1277,7 @@ function renderStrengthChart(containerId, exerciseName, allWeeks) {
       : sets >= 2 ? (!isNaN(s1)&&s1>=repMin&&!isNaN(s2)&&s2>=repMin)
       : (!isNaN(s1)&&s1>=repMin);
     if (!ok) return;
-    const wk = getWeekKey(r.date);
+    const wk = getWeekKey(toDateStr(r.date));
     if (!weekMap[wk] || w > weekMap[wk]) weekMap[wk] = w;
   });
 
@@ -1297,10 +1312,10 @@ function renderOtherChart(allWeeks) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-rangeDays);
   const cutStr = cutoff.toISOString().split('T')[0];
   const weekMap = {};
-  logRows.filter(r => r.exercise === exerciseName && String(r.date).slice(0,10) >= cutStr).forEach(r => {
+  logRows.filter(r => r.exercise === exerciseName && toDateStr(r.date) >= cutStr).forEach(r => {
     const w = parseFloat(r.weight);
     if (isNaN(w) || w <= 0) return;
-    const wk = getWeekKey(r.date);
+    const wk = getWeekKey(toDateStr(r.date));
     if (!weekMap[wk] || w > weekMap[wk]) weekMap[wk] = w;
   });
   const weeks = allWeeks && allWeeks.length ? allWeeks : Object.keys(weekMap).sort();
@@ -1402,7 +1417,7 @@ function renderLineChart(container, data, valFn, labelFn, color, unit) {
 function showWorkoutDetail(date, session) {
   // Match dates robustly — both as YYYY-MM-DD slices
   const rows = logRows.filter(r =>
-    String(r.date).slice(0,10) === String(date).slice(0,10) &&
+    toDateStr(r.date) === String(date).slice(0,10) &&
     r.session === session
   );
   const dur = rows.find(r => r.duration)?.duration;
@@ -1475,7 +1490,7 @@ function renderHistory() {
 
   list.innerHTML = sessions.map(s => {
     // Count exercises for this session+date — min 1 (cardio sessions may have 1 nameless row)
-    const sessionLogRows = logRows.filter(r => String(r.date).slice(0,10)===s.date && r.session===s.session);
+    const sessionLogRows = logRows.filter(r => toDateStr(r.date)===s.date && r.session===s.session);
     const exCount = Math.max(1, new Set(sessionLogRows.map(r=>r.exercise).filter(Boolean)).size);
     const dur = s.duration ? Math.round(Number(s.duration)) : null;
     const tmpl = templates.find(t => t.session === s.session);
@@ -1507,7 +1522,7 @@ function checkPB(date, session) {
     const w = parseFloat(row.weight);
     if (isNaN(w) || w <= 0) continue;
     const prevBest = logRows
-      .filter(r => r.exercise === row.exercise && r.date < date)
+      .filter(r => r.exercise === row.exercise && toDateStr(r.date) < date)
       .reduce((max, r) => Math.max(max, parseFloat(r.weight)||0), 0);
     if (w > prevBest) return true;
   }
