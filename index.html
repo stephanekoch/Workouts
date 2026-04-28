@@ -1042,20 +1042,34 @@ function getFilteredSessions() {
 }
 
 // Generate every Monday in the date range
+// Uses local date arithmetic to avoid UTC/BST timezone issues
 function generateWeekRange() {
-  const end = new Date();
-  end.setHours(12,0,0,0);
-  const start = new Date();
-  start.setDate(start.getDate() - rangeDays);
-  start.setHours(12,0,0,0);
-  // Snap start to nearest Monday on or after
-  const day = start.getDay() || 7;
-  if (day !== 1) start.setDate(start.getDate() + (8 - day));
+  // Work entirely in local YYYY-MM-DD strings
+  function localDateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+  function addDays(d, n) {
+    const r = new Date(d);
+    r.setDate(r.getDate() + n);
+    return r;
+  }
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  // Start = rangeDays ago, snapped BACK to the most recent Monday
+  const startRaw = addDays(today, -rangeDays);
+  const dow = startRaw.getDay(); // 0=Sun,1=Mon,...
+  const daysToMonday = dow === 0 ? -6 : -(dow - 1); // go back to Monday
+  const start = addDays(startRaw, daysToMonday);
+
   const weeks = [];
   let cur = new Date(start);
-  while (cur <= end) {
-    weeks.push(cur.toISOString().split('T')[0]);
-    cur.setDate(cur.getDate() + 7);
+  while (cur <= today) {
+    weeks.push(localDateStr(cur));
+    cur = addDays(cur, 7);
   }
   return weeks;
 }
@@ -1065,10 +1079,15 @@ function renderCharts() {
   const allWeeks = generateWeekRange();
 
   // Weekly workouts: count sessions per week
+  // nextWk = wk + 7 days using local arithmetic
+  function wkPlusOne(wkStr) {
+    const d = new Date(wkStr + 'T12:00:00');
+    d.setDate(d.getDate() + 7);
+    const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
   const weeklyData = allWeeks.map(wk => {
-    const nextWk = new Date(wk + 'T12:00:00');
-    nextWk.setDate(nextWk.getDate() + 7);
-    const nextWkStr = nextWk.toISOString().split('T')[0];
+    const nextWkStr = wkPlusOne(wk);
     const count = sessions.filter(s => s.date >= wk && s.date < nextWkStr).length;
     return { wk, label: fmtDate(wk), count };
   });
@@ -1167,8 +1186,9 @@ function renderSplitChart(containerId, sessions, allWeeks) {
     if (s.type === 'cardio') sessionMap[wk].cardio++;
     else sessionMap[wk].weight++;
   });
-  // Use allWeeks for x-axis (every Monday in range)
-  const weeks = allWeeks.map(wk => ({
+  // Use allWeeks for x-axis with fallback to session weeks
+  const weekKeys = (allWeeks && allWeeks.length) ? allWeeks : Object.keys(sessionMap).sort();
+  const weeks = weekKeys.map(wk => ({
     label: fmtDate(wk),
     weight: (sessionMap[wk]||{}).weight || 0,
     cardio: (sessionMap[wk]||{}).cardio || 0,
@@ -1247,7 +1267,12 @@ function renderStrengthChart(containerId, exerciseName, allWeeks) {
   });
 
   // Map allWeeks → value or null
-  const points = allWeeks.map(wk => ({ wk, label: fmtDate(wk), val: weekMap[wk] || null }));
+  const weeks = allWeeks && allWeeks.length ? allWeeks : Object.keys(weekMap).sort();
+  const points = weeks.map(wk => ({ wk, label: fmtDate(wk), val: weekMap[wk] || null }));
+  if (points.every(p => p.val === null)) {
+    container.innerHTML = '<div class="chart-empty">No completed sets for this period</div>';
+    return;
+  }
   renderLineChart(container, points, v => v.val, v => v.label, '#7c3aed', 'kg');
 }
 
@@ -1278,7 +1303,12 @@ function renderOtherChart(allWeeks) {
     const wk = getWeekKey(r.date);
     if (!weekMap[wk] || w > weekMap[wk]) weekMap[wk] = w;
   });
-  const points = allWeeks.map(wk => ({ wk, label: fmtDate(wk), val: weekMap[wk] || null }));
+  const weeks = allWeeks && allWeeks.length ? allWeeks : Object.keys(weekMap).sort();
+  const points = weeks.map(wk => ({ wk, label: fmtDate(wk), val: weekMap[wk] || null }));
+  if (points.every(p => p.val === null)) {
+    container.innerHTML = '<div class="chart-empty">No data for this period</div>';
+    return;
+  }
   renderLineChart(container, points, v=>v.val, v=>v.label, '#7c3aed', 'kg');
 }
 
@@ -1445,7 +1475,7 @@ function renderHistory() {
 
   list.innerHTML = sessions.map(s => {
     // Count exercises for this session+date — min 1 (cardio sessions may have 1 nameless row)
-    const sessionLogRows = logRows.filter(r => r.date===s.date && r.session===s.session);
+    const sessionLogRows = logRows.filter(r => String(r.date).slice(0,10)===s.date && r.session===s.session);
     const exCount = Math.max(1, new Set(sessionLogRows.map(r=>r.exercise).filter(Boolean)).size);
     const dur = s.duration ? Math.round(Number(s.duration)) : null;
     const tmpl = templates.find(t => t.session === s.session);
