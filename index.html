@@ -321,7 +321,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
             <div id="custom-no-ex-msg" style="text-align:center;color:var(--muted);font-size:13px;padding:16px 0;">No exercises yet — add your first one below.</div>
           </div>
         </div>
-        <button class="add-ex-fly-btn" onclick="populateAddExDropdown();document.getElementById('add-ex-modal').classList.remove('hidden')">+ Add exercise</button>
+        <button class="add-ex-fly-btn" onclick="openAddExModal()">+ Add exercise</button>
         <button class="start-btn" id="custom-start-btn" onclick="startCustomTimer()" style="opacity:.4;" disabled>Start workout</button>
       </div>
       <!-- State B: active workout -->
@@ -337,7 +337,7 @@ input[type=date]{border:none;background:transparent;font-family:'Inter',sans-ser
           </div>
           <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
           <div id="exercise-tiles"></div>
-          <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="populateAddExDropdown();document.getElementById('add-ex-modal').classList.remove('hidden')" style="margin-top:10px;">+ Add exercise</button>
+          <button class="add-ex-fly-btn hidden" id="add-ex-fly-btn" onclick="openAddExModal()" style="margin-top:10px;">+ Add exercise</button>
         </div>
         <button class="complete-btn" id="complete-btn" onclick="completeWorkout()">Complete workout</button>
       </div>
@@ -1628,19 +1628,41 @@ function getExerciseKnowledge() {
   return Object.values(map).sort((a,b) => a.name.localeCompare(b.name));
 }
 
-function populateAddExDropdown() {
-  const sel = document.getElementById('addex-select');
-  if (!sel) return;
-  // Always show rep row and reset unit to kg when opening fresh
-  addExUnit = 'kg'; addExSets = 3;
-  document.querySelectorAll('#add-ex-modal .unit-btn').forEach(b => b.classList.remove('unit-active'));
-  document.getElementById('addex-unit-kg').classList.add('unit-active');
-  document.getElementById('addex-rep-row').style.display = 'flex';
-  [1,2,3].forEach(i => document.getElementById('addex-sets-'+i)?.classList.toggle('sets-active', i===3));
-  const exercises = getExerciseKnowledge();
-  sel.innerHTML = '<option value="">+ New exercise (type below)</option>' +
-    exercises.map(e => `<option value="${e.name.replace(/"/g,'&quot;')}">${e.name}</option>`).join('');
+function openAddExModal() {
+  try {
+    const sel = document.getElementById('addex-select');
+    if (sel) {
+      const exercises = getExerciseKnowledge();
+      sel.innerHTML = '<option value="">+ New exercise (type below)</option>' +
+        exercises.map(e => `<option value="${e.name.replace(/"/g,'&quot;')}">${e.name}</option>`).join('');
+      sel.value = '';
+    }
+    // Reset fields
+    const nameInp = document.getElementById('addex-name');
+    if (nameInp) { nameInp.value = ''; nameInp.classList.remove('addex-prefilled'); }
+    const repRow = document.getElementById('addex-rep-row');
+    if (repRow) repRow.style.display = 'flex';
+    const repMin = document.getElementById('addex-repmin');
+    const repMax = document.getElementById('addex-repmax');
+    const rest = document.getElementById('addex-rest');
+    if (repMin) repMin.value = '';
+    if (repMax) repMax.value = '';
+    if (rest) rest.value = '';
+    // Reset unit buttons
+    addExUnit = 'kg'; addExSets = 3;
+    document.querySelectorAll('#add-ex-modal .unit-btn').forEach(b => b.classList.remove('unit-active'));
+    const kgBtn = document.getElementById('addex-unit-kg');
+    if (kgBtn) kgBtn.classList.add('unit-active');
+    [1,2,3].forEach(i => {
+      const b = document.getElementById('addex-sets-'+i);
+      if (b) b.classList.toggle('sets-active', i===3);
+    });
+  } catch(e) { console.error('openAddExModal error:', e); }
+  document.getElementById('add-ex-modal').classList.remove('hidden');
 }
+
+// Keep old name as alias for any remaining references
+function populateAddExDropdown() { openAddExModal(); }
 
 function onAddExSelect() {
   const sel = document.getElementById('addex-select');
@@ -1741,6 +1763,7 @@ function confirmAddEx() {
   document.getElementById('addex-name').classList.remove('addex-prefilled');
   const sel = document.getElementById('addex-select');
   if(sel) sel.value = '';
+  document.getElementById('add-ex-modal').classList.add('hidden');
 }
 
 // After completing a custom workout — ask about template
